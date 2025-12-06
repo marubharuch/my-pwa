@@ -1,21 +1,127 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
-import "./firebase"; // Add this line
+// src/App.jsx
+import React from "react";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+
+import MainLayout from "./layouts/MainLayout";
+
+import HomePage from "./pages/HomePage";
+import LoginPage from "./pages/LoginPage";
+import RegisterPage from "./pages/RegisterPage";
+import JoinFamilyPage from "./pages/JoinFamilyPage";
+import CreateFamilyPage from "./pages/CreateFamilyPage";
+import FamilyListPage from "./pages/FamilyListPage";
+import FamilyDetailPage from "./pages/FamilyDetailPage";
+
+import ProtectedRoute from "./components/ProtectedRoute";
 
 
+import DebugPage from "./pages/DebugPage";
 
-function App() {
-  const [count, setCount] = useState(0)
-
+export default function App() {
+  console.log("App component rendered");
   return (
-    <>
-     <div className="text-3xl font-bold text-red-500 p-50">
-      Tailwind is working!
-    </div>
-    </>
-  )
-}
+    <Router>
+      <Routes>
 
-export default App
+        {/* PUBLIC ROUTES */}
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+
+<Route
+  path="/debug"
+  element={
+    <MainLayout>
+      <DebugPage />
+    </MainLayout>
+  }
+/>
+
+
+
+        {/* HOME WITH LAYOUT */}
+        <Route
+          path="/"
+          element={
+            <MainLayout>
+              <HomePage />
+            </MainLayout>
+          }
+        />
+
+<Route
+  path="/create-family"
+  element={
+    <ProtectedRoute>
+      <MainLayout>
+        <CreateFamilyPage />
+      </MainLayout>
+    </ProtectedRoute>
+  }
+/>
+
+
+<Route
+  path="/join-family"
+  element={
+    <ProtectedRoute>
+      <MainLayout>
+        <JoinFamilyPage />
+      </MainLayout>
+    </ProtectedRoute>
+  }
+/>
+
+
+
+
+        {/* PROTECTED ROUTES */}
+        <Route
+          path="/families"
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                <FamilyListPage />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/family/:srno"
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                <FamilyDetailPage />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ADMIN PAGE (protected, empty placeholder) */}
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                Admin dashboard coming soon...
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* FALLBACK ROUTE */}
+        <Route
+          path="*"
+          element={
+            <MainLayout>
+              <div className="p-4 text-center text-red-500">
+                Page not found
+              </div>
+            </MainLayout>
+          }
+        />
+
+      </Routes>
+    </Router>
+  );
+}
