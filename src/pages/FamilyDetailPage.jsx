@@ -1,88 +1,130 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import MemberForm from "../components/MemberForm";
-
-import {
-  loadFamily,
-  addMember,
-  updateMember,
-  updateFamily
-} from "../services/familyService";
+import { db } from "../firebase";
+import { ref, get, set, update, remove } from "firebase/database";
 
 export default function FamilyDetailPage() {
   const { srno } = useParams();
   const { user } = useAuth();
 
   const [family, setFamily] = useState(null);
+  const [pendingUsers, setPendingUsers] = useState({});
   const [loading, setLoading] = useState(true);
-
-  const [memberModalOpen, setMemberModalOpen] = useState(false);
-  const [editMember, setEditMember] = useState(null);
 
   const uid = user?.uid;
 
-  /* ---------------- LOAD FAMILY ---------------- */
+  /* ---------------------------------------
+     LOAD FAMILY
+  --------------------------------------- */
   useEffect(() => {
-    async function fetchData() {
-      const data = await loadFamily(srno);
-      setFamily(data);
+    async function loadFamily() {
+      const snap = await get(ref(db, `families/${srno}`));
+      if (snap.exists()) {
+        setFamily(snap.val());
+      }
       setLoading(false);
     }
-    fetchData();
+    loadFamily();
   }, [srno]);
 
-  /* ---------------- PERMISSION ---------------- */
+  /* ---------------------------------------
+     CHECK EDITOR / ADMIN
+  --------------------------------------- */
   const isEditor =
     user &&
-    (user.role === "admin" || family?.editorEmails?.[uid] === true);
+    (user.role === "admin" ||
+      family?.editorEmails?.[uid] === true);
 
-  /* ---------------- EDIT CITY / NATIVE (POPUP) ---------------- */
-  const editField = async (field, label) => {
-    if (!isEditor) return;
+  /* ---------------------------------------
+     LOAD PENDING USERS (OPTION A)
+  --------------------------------------- */
+  useEffect(() => {
+    async function enrichPendingRequests() {
+      if (!family?.pendingRequests) {
+        setPendingUsers({});
+        return;
+      }
 
-    const current = family[field] || "";
-    const value = window.prompt(`Edit ${label}`, current);
+      const enriched = {};
 
-    if (value === null || value.trim() === current) return;
+      for (const pendingUid of Object.keys(family.pendingRequests)) {
+        const userSnap = await get(ref(db, `users/${pendingUid}`));
+        if (userSnap.exists()) {
+          enriched[pendingUid] = {
+            ...family.pendingRequests[pendingUid],
+            name: userSnap.val().name,
+            email: userSnap.val().email,
+            mobile: userSnap.val().mobile,
+          };
+        }
+      }
 
-    await updateFamily(srno, { [field]: value.trim() });
-    setFamily(await loadFamily(srno));
-  };
-
-  /* ---------------- ADD / EDIT MEMBER ---------------- */
-  const handleSaveMember = async (memberData, memberId = null) => {
-    if (!isEditor) return alert("Not allowed");
-
-    const payload = {
-      ...memberData,
-      active: memberData.active !== false
-    };
-
-    if (memberId) {
-      await updateMember(srno, memberId, payload);
-    } else {
-      await addMember(srno, payload);
+      setPendingUsers(enriched);
     }
 
-    setFamily(await loadFamily(srno));
-  };
+    if (family && isEditor) {
+      enrichPendingRequests();
+    }
+  }, [family, isEditor]);
 
-  /* ---------------- ACTIVATE / DEACTIVATE ---------------- */
-  const toggleActive = async (id, active) => {
+  /* ---------------------------------------
+     APPROVE JOIN REQUEST
+  --------------------------------------- */
+  const approveJoin = async (requesterUid) => {
     if (!isEditor) return;
 
-    const ok = window.confirm(
-      active
-        ? "Deactivate this member?"
-        : "Activate this member?"
-    );
-    if (!ok) return;
+    const userSnap = await get(ref(db, `users/${requesterUid}`));
+    if (!userSnap.exists()) return;
 
-    await updateMember(srno, id, { active: !active });
-    setFamily(await loadFamily(srno));
+    const userData = userSnap.val();
+
+    // 1️⃣ Add to family members
+    await set(ref(db, `families/${srno}/members/${requesterUid}`), {
+      name: userData.name,
+      mobile: userData.mobile,
+      active: true,
+      joinedAt: Date.now(),
+    });
+
+    // 2️⃣ Update user profile
+    await update(ref(db, `users/${requesterUid}`), {
+      familySrno: srno,
+      role: "member",
+    });
+
+    // 3️⃣ Remove pending entries
+    await remove(ref(db, `users/${requesterUid}/pendingJoin`));
+    await remove(
+      ref(db, `families/${srno}/pendingRequests/${requesterUid}`)
+    );
+
+    // 4️⃣ Refresh
+    const snap = await get(ref(db, `families/${srno}`));
+    if (snap.exists()) setFamily(snap.val());
   };
 
+  /* ---------------------------------------
+     REJECT JOIN REQUEST
+  --------------------------------------- */
+  const rejectJoin = async (requesterUid) => {
+    if (!isEditor) return;
+
+    await remove(ref(db, `users/${requesterUid}/pendingJoin`));
+    await remove(
+      ref(db, `families/${srno}/pendingRequests/${requesterUid}`)
+    );
+
+    setPendingUsers((prev) => {
+      const copy = { ...prev };
+      delete copy[requesterUid];
+      return copy;
+    });
+  };
+
+  /* ---------------------------------------
+     UI STATES
+  --------------------------------------- */
   if (loading) return <div className="p-4">Loading family...</div>;
   if (!family) return <div className="p-4">Family not found</div>;
 
@@ -94,115 +136,69 @@ export default function FamilyDetailPage() {
     <div className="p-4 max-w-md mx-auto">
 
       {/* HEADER */}
-      <h2 className="text-xl font-bold mb-3">Family #{srno}</h2>
+      <h2 className="text-xl font-bold mb-4">
+        Family #{srno}
+      </h2>
 
-      {/* CITY / NATIVE AS LABELS */}
-      <div className="bg-white p-3 rounded shadow mb-4 space-y-2">
+      {/* ✅ PENDING REQUESTS */}
+      {isEditor && Object.keys(pendingUsers).length > 0 && (
+        <div className="mb-6">
+          <h3 className="font-bold mb-2">
+            Pending Join Requests
+          </h3>
 
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-gray-600">
-            Current City: <strong>{family.currentCity || "-"}</strong>
-          </span>
-          {isEditor && (
-            <button
-              onClick={() => editField("currentCity", "Current City")}
-              className="text-blue-600"
-            >
-              ✏️
-            </button>
-          )}
-        </div>
-
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-gray-600">
-            Native City: <strong>{family.nativeCity || "-"}</strong>
-          </span>
-          {isEditor && (
-            <button
-              onClick={() => editField("nativeCity", "Native City")}
-              className="text-blue-600"
-            >
-              ✏️
-            </button>
-          )}
-        </div>
-
-      </div>
-
-      {/* MEMBER LIST */}
-      <div className="space-y-3">
-        {members.map(([id, m]) => {
-          if (!m.active && !isEditor) return null;
-
-          return (
+          {Object.entries(pendingUsers).map(([pid, req]) => (
             <div
-              key={id}
-              className={`p-3 rounded shadow flex justify-between ${
-                m.active ? "bg-white" : "bg-gray-100 opacity-70"
-              }`}
+              key={pid}
+              className="border rounded p-3 mb-3 flex justify-between"
             >
               <div>
-                <div className="font-semibold">
-                  👤 {m.name}
-                  {!m.active && (
-                    <span className="text-xs text-red-500"> (Inactive)</span>
-                  )}
-                </div>
-                <div className="text-sm text-gray-600">
-                  📱 {m.mobile || "-"} | ⚧ {m.gender || "-"}
-                </div>
+                <p className="font-semibold">{req.name}</p>
+                <p className="text-sm">📧 {req.email}</p>
+                <p className="text-sm">📱 {req.mobile || "-"}</p>
+                <p className="text-xs text-gray-500">
+                  Requested on{" "}
+                  {new Date(req.requestedAt).toLocaleDateString()}
+                </p>
               </div>
 
-              {isEditor && (
-                <div className="flex flex-col gap-2">
-                  <button
-                    onClick={() => {
-                      setEditMember({ id, ...m });
-                      setMemberModalOpen(true);
-                    }}
-                    className="px-2 py-1 border rounded text-sm"
-                  >
-                    Edit
-                  </button>
-
-                  <button
-                    onClick={() => toggleActive(id, m.active)}
-                    className={`px-2 py-1 text-white rounded text-sm ${
-                      m.active ? "bg-red-500" : "bg-green-600"
-                    }`}
-                  >
-                    {m.active ? "Deactivate" : "Activate"}
-                  </button>
-                </div>
-              )}
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => approveJoin(pid)}
+                  className="bg-green-600 text-white px-3 py-1 rounded"
+                >
+                  Approve
+                </button>
+                <button
+                  onClick={() => rejectJoin(pid)}
+                  className="bg-red-500 text-white px-3 py-1 rounded"
+                >
+                  Reject
+                </button>
+              </div>
             </div>
-          );
-        })}
-      </div>
-
-      {/* ADD MEMBER (AFTER MEMBERS) */}
-      {isEditor && (
-        <button
-          onClick={() => {
-            setEditMember(null);
-            setMemberModalOpen(true);
-          }}
-          className="mt-4 w-full bg-green-600 text-white py-2 rounded"
-        >
-          + Add Member
-        </button>
+          ))}
+        </div>
       )}
 
-      {/* MEMBER MODAL */}
-      <MemberForm
-        open={memberModalOpen}
-        initial={editMember}
-        onClose={() => {
-          setMemberModalOpen(false);
-          setEditMember(null);
-        }}
-        onSave={handleSaveMember}
-      />
+      {/* ✅ MEMBER LIST */}
+      <h3 className="font-bold mb-2">Members</h3>
+
+      <div className="space-y-3">
+        {members.map(([id, m]) => (
+          <div
+            key={id}
+            className={`p-3 rounded shadow ${
+              m.active ? "bg-white" : "bg-gray-100 opacity-70"
+            }`}
+          >
+            <div className="font-semibold">👤 {m.name}</div>
+            <div className="text-sm text-gray-600">
+              📱 {m.mobile || "-"}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

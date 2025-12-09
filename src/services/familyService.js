@@ -1,90 +1,121 @@
+// src/services/familyService.js
 import { db } from "../firebase";
-import { ref, get, set, update, remove } from "firebase/database";
+import {
+  ref,
+  get,
+  set,
+  update,
+  remove,
+  push,
+} from "firebase/database";
 import localforage from "localforage";
 
 /* ---------- LOCALFORAGE KEY ---------- */
-function lfKey(srno) {
-  return `family_${srno}`;
-}
+const lfKey = (srno) => `family_${srno}`;
 
-/* ---------- READ FAMILY WITH DELTA SYNC ---------- */
+/* ---------- LOAD FAMILY (DELTA SAFE) ---------- */
 export async function loadFamily(srno) {
-  const key = lfKey(srno);
+  const cacheKey = lfKey(srno);
 
-  // Load cached data if exists
-  const local = await localforage.getItem(key);
+  const local = await localforage.getItem(cacheKey);
 
-  // Check server updatedAt
+  // lightweight check
+  const detailSnap = await get(ref(db, `familyDetails/${srno}`));
+  if (!detailSnap.exists()) return null;
+
+  const { lastUpdateTimestamp } = detailSnap.val();
+
+  // serve from cache if same
+  if (local && local.updatedAt === lastUpdateTimestamp) {
+    return local;
+  }
+
+  // fetch full family
   const snap = await get(ref(db, `families/${srno}`));
   if (!snap.exists()) return null;
 
   const server = snap.val();
 
-  // If no local cache → save & return server
-  if (!local) {
-    await localforage.setItem(key, server);
-    return server;
-  }
+  // normalize
+  server.updatedAt = lastUpdateTimestamp;
 
-  // If server newer → update local and return server
-  if (server.updatedAt > (local.updatedAt || 0)) {
-    await localforage.setItem(key, server);
-    return server;
-  }
-
-  // Local is latest → use local only
-  return local;
+  await localforage.setItem(cacheKey, server);
+  return server;
 }
 
-/* ---------- UPDATE LOCAL CACHE ---------- */
-async function updateLocal(srno, newData) {
-  await localforage.setItem(`family_${srno}`, newData);
+/* ---------- SAFE LOCAL UPDATE ---------- */
+async function updateLocal(srno) {
+  const fresh = await get(ref(db, `families/${srno}`));
+  if (!fresh.exists()) return;
+
+  const server = fresh.val();
+  await localforage.setItem(lfKey(srno), server);
 }
 
 /* ---------- ADD MEMBER ---------- */
 export async function addMember(srno, data) {
-  const id = String(Date.now());
-  const memberRef = ref(db, `families/${srno}/members/${id}`);
+  const id = push(ref(db, `families/${srno}/members`)).key;
 
-  const payload = { ...data, updatedAt: Date.now() };
-  await set(memberRef, payload);
+  const payload = {
+    ...data,
+    createdAt: Date.now(),
+    active: data.active !== false,
+  };
 
-  await update(ref(db, `families/${srno}`), { updatedAt: Date.now() });
+  await update(ref(db, `families/${srno}/members/${id}`), payload);
 
-  // refresh local cache
-  const updated = await loadFamily(srno);
-  await updateLocal(srno, updated);
+  const ts = Date.now();
+  await update(ref(db, `families/${srno}`), { updatedAt: ts });
+  await update(ref(db, `familyDetails/${srno}`), {
+    lastUpdateTimestamp: ts,
+  });
 
+  await updateLocal(srno);
   return id;
 }
 
 /* ---------- UPDATE MEMBER ---------- */
 export async function updateMember(srno, id, data) {
-  const memberRef = ref(db, `families/${srno}/members/${id}`);
-  const payload = { ...data, updatedAt: Date.now() };
+  const ts = Date.now();
 
-  await update(memberRef, payload);
-  await update(ref(db, `families/${srno}`), { updatedAt: Date.now() });
+  await update(ref(db, `families/${srno}/members/${id}`), {
+    ...data,
+    updatedAt: ts,
+  });
 
-  const updated = await loadFamily(srno);
-  await updateLocal(srno, updated);
+  await update(ref(db, `families/${srno}`), { updatedAt: ts });
+  await update(ref(db, `familyDetails/${srno}`), {
+    lastUpdateTimestamp: ts,
+  });
+
+  await updateLocal(srno);
 }
 
 /* ---------- DELETE MEMBER ---------- */
 export async function deleteMember(srno, id) {
   await remove(ref(db, `families/${srno}/members/${id}`));
-  await update(ref(db, `families/${srno}`), { updatedAt: Date.now() });
 
-  const updated = await loadFamily(srno);
-  await updateLocal(srno, updated);
+  const ts = Date.now();
+  await update(ref(db, `families/${srno}`), { updatedAt: ts });
+  await update(ref(db, `familyDetails/${srno}`), {
+    lastUpdateTimestamp: ts,
+  });
+
+  await updateLocal(srno);
 }
 
-/* ---------- UPDATE FAMILY FIELDS ---------- */
+/* ---------- UPDATE FAMILY CORE ---------- */
 export async function updateFamily(srno, data) {
-  const payload = { ...data, updatedAt: Date.now() };
+  const ts = Date.now();
 
-  await update(ref(db, `families/${srno}`), payload);
+  await update(ref(db, `families/${srno}`), {
+    ...data,
+    updatedAt: ts,
+  });
 
-  const updated = await loadFamily(srno);
-  await updateLocal(srno, updated);
+  await update(ref(db, `familyDetails/${srno}`), {
+    lastUpdateTimestamp: ts,
+  });
+
+  await updateLocal(srno);
 }

@@ -1,14 +1,34 @@
 // src/components/Navbar.jsx
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { db } from "../firebase";
+import { ref, get } from "firebase/database";
 
 export default function Navbar() {
   const { user, logout } = useAuth();
+  const [profile, setProfile] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
 
+  useEffect(() => {
+    if (!user) {
+      setProfile(null);
+      return;
+    }
+
+    const loadProfile = async () => {
+      const snap = await get(ref(db, `users/${user.uid}`));
+      if (snap.exists()) {
+        setProfile(snap.val());
+      }
+    };
+
+    loadProfile();
+  }, [user]);
+
   const handleLogout = async () => {
+    setMenuOpen(false);
     await logout();
     navigate("/login");
   };
@@ -16,13 +36,10 @@ export default function Navbar() {
   return (
     <nav className="bg-blue-600 text-white fixed w-full top-0 shadow-md z-50">
       <div className="max-w-4xl mx-auto px-4 flex items-center justify-between h-14">
-
-        {/* BRAND / LOGO */}
         <Link to="/" className="font-bold text-lg">
           Oswal Directory
         </Link>
 
-        {/* HAMBURGER BUTTON (Mobile) */}
         <button
           className="sm:hidden block text-white text-2xl"
           onClick={() => setMenuOpen(!menuOpen)}
@@ -30,116 +47,52 @@ export default function Navbar() {
           ☰
         </button>
 
-        {/* MENU (Desktop) */}
         <div className="hidden sm:flex space-x-6">
+          <Link to="/">Home</Link>
+          <Link to="/families">Family List</Link>
+          <Link to="/create-family">Create Family</Link>
 
-          <Link to="/" className="hover:text-gray-200">
-            Home
-          </Link>
-
-          <Link to="/families" className="hover:text-gray-200">
-            Family List
-          </Link>
-
-          <Link to="/create-family" className="hover:text-gray-200">
-            Create Family
-          </Link>
-
-          {/* My Family (only if user has familySrno) */}
-          {user && user.familySrno && (
-            <Link
-              to={`/family/${user.familySrno}`}
-              className="hover:text-gray-200"
-            >
-              My Family
-            </Link>
+          {profile?.familySrno && (
+            <Link to={`/family/${profile.familySrno}`}>My Family</Link>
           )}
 
-          {/* ADMIN ONLY */}
-          {user && user.role === "admin" && (
-            <Link to="/admin" className="hover:text-gray-200">
-              Admin Panel
-            </Link>
+          {profile?.role === "admin" && (
+            <Link to="/admin">Admin Panel</Link>
           )}
 
-          {/* LOGIN / LOGOUT */}
           {user ? (
-            <button
-              onClick={handleLogout}
-              className="hover:text-gray-200"
-            >
-              Logout
-            </button>
+            <button onClick={handleLogout}>Logout</button>
           ) : (
-            <Link to="/login" className="hover:text-gray-200">
-              Login
-            </Link>
+            <Link to="/login">Login</Link>
           )}
-
         </div>
       </div>
 
-      {/* MOBILE DROPDOWN MENU */}
       {menuOpen && (
         <div className="sm:hidden bg-blue-700 text-white px-4 pb-3 space-y-2">
+          <Link to="/" onClick={() => setMenuOpen(false)}>Home</Link>
+          <Link to="/families" onClick={() => setMenuOpen(false)}>Family List</Link>
+          <Link to="/create-family" onClick={() => setMenuOpen(false)}>Create Family</Link>
 
-          <Link
-            to="/"
-            className="block py-2 border-b border-blue-500"
-            onClick={() => setMenuOpen(false)}
-          >
-            Home
-          </Link>
-
-          <Link
-            to="/families"
-            className="block py-2 border-b border-blue-500"
-            onClick={() => setMenuOpen(false)}
-          >
-            Family List
-          </Link>
-
-          <Link
-            to="/create-family"
-            className="block py-2 border-b border-blue-500"
-            onClick={() => setMenuOpen(false)}
-          >
-            Create Family
-          </Link>
-
-          {user && user.familySrno && (
+          {profile?.familySrno && (
             <Link
-              to={`/family/${user.familySrno}`}
-              className="block py-2 border-b border-blue-500"
+              to={`/family/${profile.familySrno}`}
               onClick={() => setMenuOpen(false)}
             >
               My Family
             </Link>
           )}
 
-          {user && user.role === "admin" && (
-            <Link
-              to="/admin"
-              className="block py-2 border-b border-blue-500"
-              onClick={() => setMenuOpen(false)}
-            >
+          {profile?.role === "admin" && (
+            <Link to="/admin" onClick={() => setMenuOpen(false)}>
               Admin Panel
             </Link>
           )}
 
           {user ? (
-            <button
-              onClick={handleLogout}
-              className="block w-full text-left py-2"
-            >
-              Logout
-            </button>
+            <button onClick={handleLogout}>Logout</button>
           ) : (
-            <Link
-              to="/login"
-              className="block py-2"
-              onClick={() => setMenuOpen(false)}
-            >
+            <Link to="/login" onClick={() => setMenuOpen(false)}>
               Login
             </Link>
           )}

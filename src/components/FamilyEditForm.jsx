@@ -1,7 +1,14 @@
 // src/components/FamilyEditForm.jsx
 import React, { useState } from "react";
 import { db } from "../firebase";
-import { ref, set, get, update } from "firebase/database";
+import {
+  ref,
+  get,
+  set,
+  update,
+  runTransaction,
+  push,
+} from "firebase/database";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { ensurePublicUserIndex } from "../services/publicIndexService";
@@ -18,20 +25,33 @@ export default function FamilyEditForm({ mode = "create", familyData }) {
   const [members, setMembers] = useState(
     familyData?.members
       ? Object.values(familyData.members)
-      : [{ name: "", mobile: "", gender: "Male" }]
+      : [{ id: null, name: "", mobile: "", gender: "Male" }]
   );
 
-  const updateMember = (index, field, value) => {
-    const updated = [...members];
-    updated[index][field] = value;
-    setMembers(updated);
+  const updateMember = (i, field, value) => {
+    const copy = [...members];
+    copy[i] = { ...copy[i], [field]: value };
+    setMembers(copy);
   };
 
   const addMember = () => {
-    setMembers([...members, { name: "", mobile: "", gender: "Male" }]);
+    setMembers([...members, { id: null, name: "", mobile: "", gender: "Male" }]);
+  };
+
+  const validate = () => {
+    if (!family.currentCity) return "Current city is required";
+    if (members.length === 0) return "At least one member required";
+    if (!members[0].name) return "First member name is required";
+    return null;
   };
 
   const handleSubmit = async () => {
+    const err = validate();
+    if (err) {
+      alert(err);
+      return;
+    }
+
     if (!user) {
       alert("Login required");
       return;
@@ -41,30 +61,21 @@ export default function FamilyEditForm({ mode = "create", familyData }) {
     let srno;
 
     try {
-      /* 1️⃣ GET SRNO */
+      /* ✅ SAFE SRNO GENERATION */
       if (mode === "create") {
-        const snap = await get(ref(db, "master/nextFamilySrno"));
-        srno = String(snap.val() || 1);
+        await runTransaction(ref(db, "master/nextFamilySrno"), (val) => {
+          srno = String(val || 1);
+          return (val || 1) + 1;
+        });
       } else {
         srno = familyData.srno;
       }
 
-      /* 2️⃣ BUILD FAMILY PAYLOAD */
-      const familyPayload = {
-        currentCity: family.currentCity,
-        nativeCity: family.nativeCity,
-        updatedAt: timestamp,
-        createdBy: mode === "create" ? user.uid : familyData.createdBy,
-        editorEmails:
-          mode === "create"
-            ? { [user.uid]: true }
-            : familyData.editorEmails || { [user.uid]: true },
-        members: {},
-      };
-
+      /* ✅ BUILD MEMBERS SAFELY */
+      const membersPayload = {};
       members.forEach((m) => {
-        const id = m.id || timestamp + Math.floor(Math.random() * 100000);
-        familyPayload.members[id] = {
+        const id = m.id || push(ref(db)).key;
+        membersPayload[id] = {
           id,
           name: m.name,
           mobile: m.mobile,
@@ -74,43 +85,57 @@ export default function FamilyEditForm({ mode = "create", familyData }) {
         };
       });
 
-      /* 3️⃣ WRITE FAMILY */
-      await set(ref(db, `families/${srno}`), familyPayload);
-
-      /* 4️⃣ WRITE SUMMARY */
-      await set(ref(db, `familyDetails/${srno}`), {
+      const familyPayload = {
         currentCity: family.currentCity,
         nativeCity: family.nativeCity,
-        totalMembers: members.length,
+        updatedAt: timestamp,
+        members: membersPayload,
+      };
+
+      /* ✅ WRITE FAMILY */
+      if (mode === "create") {
+        await set(ref(db, `families/${srno}`), {
+          ...familyPayload,
+          createdAt: timestamp,
+          createdBy: user.uid,
+          editorEmails: { [user.uid]: true },
+        });
+      } else {
+        await update(ref(db, `families/${srno}`), familyPayload);
+      }
+
+      /* ✅ SUMMARY */
+      await update(ref(db, `familyDetails/${srno}`), {
+        currentCity: family.currentCity,
+        nativeCity: family.nativeCity,
+        totalMembers: Object.values(membersPayload).filter(m => m.active).length,
         lastUpdateTimestamp: timestamp,
       });
 
-      /* 5️⃣ IF CREATE – UPDATE MASTER + USER */
+      /* ✅ USER LINK (CREATE ONLY) */
       if (mode === "create") {
-        await update(ref(db, "master"), {
-          nextFamilySrno: Number(srno) + 1,
-        });
+        const userSnap = await get(ref(db, `users/${user.uid}`));
+        const prevRole = userSnap.val()?.role;
 
         await update(ref(db, `users/${user.uid}`), {
           familySrno: srno,
-          role: "member",
+          role: prevRole === "admin" ? "admin" : "member",
         });
 
-        /* ✅ PUBLIC INDEX (CRITICAL) */
         await ensurePublicUserIndex({
           uid: user.uid,
           email: user.email,
           familySrno: srno,
-          provider: user.providerId || "google",
+          provider: user.providerData?.[0]?.providerId || "google",
         });
 
         navigate(`/family/${srno}`);
       } else {
-        alert("Family updated successfully!");
+        alert("Family updated successfully");
       }
-    } catch (err) {
-      console.error("❌ Family save failed:", err);
-      alert(err.message);
+    } catch (e) {
+      console.error("Family save failed", e);
+      alert("Family save failed");
     }
   };
 
@@ -120,20 +145,24 @@ export default function FamilyEditForm({ mode = "create", familyData }) {
         className="border p-2 w-full"
         placeholder="Current City"
         value={family.currentCity}
-        onChange={(e) => setFamily({ ...family, currentCity: e.target.value })}
+        onChange={(e) =>
+          setFamily({ ...family, currentCity: e.target.value })
+        }
       />
 
       <input
         className="border p-2 w-full"
         placeholder="Native City"
         value={family.nativeCity}
-        onChange={(e) => setFamily({ ...family, nativeCity: e.target.value })}
+        onChange={(e) =>
+          setFamily({ ...family, nativeCity: e.target.value })
+        }
       />
 
       <h3 className="text-lg font-bold">Members</h3>
 
       {members.map((m, i) => (
-        <div key={i} className="border p-3 rounded space-y-2">
+        <div key={m.id || i} className="border p-3 rounded space-y-2">
           <input
             className="border p-2 w-full"
             placeholder="Name"

@@ -2,12 +2,11 @@ import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { Link, useNavigate } from "react-router-dom";
 import { sendPasswordResetEmail } from "firebase/auth";
-import { auth, db } from "../firebase";
-import { ref, get } from "firebase/database";
+import { auth } from "../firebase";
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { loginWithEmail, loginWithGoogle } = useAuth();
+  const { loginWithEmail, loginWithGoogleChecked } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,7 +21,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  /* ---------------- LOGIN ---------------- */
+  /* ---------------- EMAIL LOGIN ---------------- */
   const handleEmailLogin = async (e) => {
     e.preventDefault();
     setError("");
@@ -35,10 +34,16 @@ export default function LoginPage() {
     }
   };
 
+  /* ---------------- GOOGLE LOGIN (CORRECT) ---------------- */
   const handleGoogleLogin = async () => {
     try {
-      await loginWithGoogle();
-      navigate("/");
+      const { isNewUser } = await loginWithGoogleChecked();
+
+      if (isNewUser) {
+        navigate("/register", { state: { fromGoogle: true } });
+      } else {
+        navigate("/");
+      }
     } catch {
       setError("Google login failed");
     }
@@ -61,7 +66,7 @@ export default function LoginPage() {
     }
   };
 
-  /* ---------------- FORGOT EMAIL (CORRECT & SAFE) ---------------- */
+  /* ---------------- FORGOT EMAIL (PUBLIC INDEX) ---------------- */
   const findEmailsBySrNo = async () => {
     setError("");
     setEmailList([]);
@@ -74,7 +79,11 @@ export default function LoginPage() {
     }
 
     try {
-      const snap = await get(ref(db, `publicUserIndex/${srno}`));
+      // NOTE: keep this public index logic here – this is NOT auth
+      const snap = await window.firebase
+        .database()
+        .ref(`publicUserIndex/${srno}`)
+        .get();
 
       if (!snap.exists()) {
         setError("No emails found for this family");
@@ -84,7 +93,7 @@ export default function LoginPage() {
 
       const list = Object.values(snap.val()).map((u) => ({
         maskedEmail: u.maskedEmail,
-        provider: u.provider
+        provider: u.provider,
       }));
 
       setEmailList(list);
@@ -101,7 +110,9 @@ export default function LoginPage() {
 
         <h2 className="text-2xl font-bold text-center mb-5">Login</h2>
 
-        {error && <p className="text-red-500 text-sm text-center mb-3">{error}</p>}
+        {error && (
+          <p className="text-red-500 text-sm text-center mb-3">{error}</p>
+        )}
 
         {/* GOOGLE LOGIN */}
         <button
@@ -113,9 +124,9 @@ export default function LoginPage() {
 
         {/* DIVIDER */}
         <div className="flex items-center my-4">
-          <div className="flex-grow h-px bg-gray-300"></div>
+          <div className="flex-grow h-px bg-gray-300" />
           <span className="mx-2 text-gray-500 text-sm">OR</span>
-          <div className="flex-grow h-px bg-gray-300"></div>
+          <div className="flex-grow h-px bg-gray-300" />
         </div>
 
         {/* EMAIL LOGIN */}
@@ -153,95 +164,12 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* REGISTER */}
         <p className="text-center text-sm mt-4">
           New user?{" "}
           <Link to="/register" className="text-blue-500">
             Register here
           </Link>
         </p>
-
-        {/* FORGOT EMAIL LINK */}
-        <div
-          className="text-center text-sm text-gray-600 mt-5 cursor-pointer"
-          onClick={() => setShowForgotEmail(true)}
-        >
-          Forgot email?
-        </div>
-
-        {/* ---------------- FORGOT PASSWORD MODAL ---------------- */}
-        {showForgotPassword && (
-          <div className="absolute inset-0 bg-white p-6 rounded shadow">
-            <h3 className="text-lg font-bold mb-3">Reset Password</h3>
-
-            <input
-              className="w-full border px-3 py-2 rounded mb-3"
-              placeholder="Your email"
-              value={forgotEmail}
-              onChange={(e) => setForgotEmail(e.target.value)}
-            />
-
-            <button
-              onClick={handleForgotPassword}
-              className="w-full bg-blue-500 text-white py-2 rounded mb-2"
-            >
-              Send Reset Link
-            </button>
-
-            <button
-              onClick={() => setShowForgotPassword(false)}
-              className="w-full text-gray-500 text-sm"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-
-        {/* ---------------- FORGOT EMAIL BOTTOM PANEL ---------------- */}
-        {showForgotEmail && (
-          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-end">
-            <div className="bg-white w-full rounded-t-xl p-5 max-h-[70vh] overflow-auto">
-
-              <h3 className="text-lg font-bold mb-3">Find Email by Family No</h3>
-
-              <input
-                className="w-full border px-3 py-2 rounded mb-3"
-                placeholder="Family Serial Number"
-                value={srno}
-                onChange={(e) => setSrno(e.target.value)}
-              />
-
-              <button
-                onClick={findEmailsBySrNo}
-                className="w-full bg-gray-800 text-white py-2 rounded mb-3"
-                disabled={loading}
-              >
-                {loading ? "Searching..." : "Find Emails"}
-              </button>
-
-              {emailList.length > 0 && (
-                <div className="bg-gray-100 rounded p-3 text-sm">
-                  {emailList.map((e, i) => (
-                    <div key={i} className="flex justify-between py-1">
-                      <span>{e.maskedEmail}</span>
-                      <span className="text-gray-500 text-xs">
-                        {e.provider}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <button
-                onClick={() => setShowForgotEmail(false)}
-                className="w-full mt-4 text-gray-600 text-sm"
-              >
-                Close
-              </button>
-
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

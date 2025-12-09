@@ -13,9 +13,7 @@ export default function CreateFamilyPage() {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ---------------------------------------
-  // LOAD USER PROFILE FROM /users/{uid}
-  // ---------------------------------------
+  // LOAD USER PROFILE
   useEffect(() => {
     async function loadProfile() {
       if (!user) {
@@ -24,14 +22,14 @@ export default function CreateFamilyPage() {
       }
 
       try {
-        const snap = await get(ref(db, "users/" + user.uid));
+        const snap = await get(ref(db, `users/${user.uid}`));
         if (snap.exists()) {
           setProfile(snap.val());
         } else {
           setProfile(null);
         }
       } catch (err) {
-        console.error("Error loading user profile in CreateFamilyPage:", err);
+        console.error("Error loading profile:", err);
         setProfile(null);
       } finally {
         setLoading(false);
@@ -41,25 +39,19 @@ export default function CreateFamilyPage() {
     loadProfile();
   }, [user]);
 
-  // ---------------------------------------
-  // DERIVED FLAGS
-  // ---------------------------------------
-  const isAdmin = profile?.role === "admin";
-  const hasFamily = !!profile?.familySrno;
+  // AUTH SAFETY
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate("/login");
+    }
+  }, [user, loading, navigate]);
 
-  // ---------------------------------------
-  // UI STATES
-  // ---------------------------------------
-  if (!user && !loading) {
-    // not logged in
-    return (
-      <div className="p-4 max-w-md mx-auto">
-        <p className="text-center text-sm">
-          Please log in to create a family.
-        </p>
-      </div>
-    );
-  }
+  // FIRST-TIME USER → REGISTER
+  useEffect(() => {
+    if (!loading && user && profile === null) {
+      navigate("/register");
+    }
+  }, [loading, user, profile, navigate]);
 
   if (loading) {
     return (
@@ -69,13 +61,21 @@ export default function CreateFamilyPage() {
     );
   }
 
-  // Non-admin & already in a family → cannot create another
+  if (!profile) {
+    return null; // redirected
+  }
+
+  const isAdmin = profile.role === "admin";
+  const hasFamily = !!profile.familySrno;
+
+  // Non-admin & already has family
   if (!isAdmin && hasFamily) {
     return (
       <div className="p-4 max-w-md mx-auto">
         <h1 className="text-xl font-bold mb-4">Create Family</h1>
+
         <p className="mb-4 text-sm text-gray-700">
-          You are already linked to Family #{profile.familySrno}.  
+          You are already linked to Family #{profile.familySrno}.
           A user can be member of only one family.
         </p>
 
@@ -87,13 +87,13 @@ export default function CreateFamilyPage() {
         </button>
 
         <p className="text-xs text-gray-500">
-          If your family number is wrong, please contact an admin to correct it.
+          If this is incorrect, please contact an admin.
         </p>
       </div>
     );
   }
 
-  // Admin OR user without any family → show create form
+  // ADMIN OR USER WITHOUT FAMILY
   return (
     <div className="p-4 max-w-md mx-auto">
       <h1 className="text-xl font-bold mb-4">Create New Family</h1>
