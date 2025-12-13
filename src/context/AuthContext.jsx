@@ -1,15 +1,37 @@
-import { createContext, useContext, useEffect, useState } from "react";
+/**
+ * 🔐 AUTH CONTEXT – FROZEN + CACHED
+ *
+ * SINGLE SOURCE OF TRUTH:
+ * --------------------------------
+ * ✅ Firebase Auth user
+ * ✅ RTDB user profile (/users/{uid})
+ * ✅ localForage cache
+ *
+ * RULES (DO NOT BREAK):
+ * --------------------------------
+ * ❌ No component reads /users/{uid}
+ * ❌ Do not re-fetch profile outside this file
+ * ✅ Use userRecord everywhere
+ */
+
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signOut,
   GoogleAuthProvider,
   signInWithPopup,
-  signOut,
-  createUserWithEmailAndPassword,
-  updateProfile,
+  getAdditionalUserInfo,
 } from "firebase/auth";
-import { ref, get } from "firebase/database";
+
 import { auth, db } from "../firebase";
+import { ref, get } from "firebase/database";
+import localforage from "localforage";
 
 const AuthContext = createContext();
 
@@ -19,43 +41,114 @@ export function useAuth() {
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [userRecord, setUserRecord] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
+  /* ---------------- LOAD PROFILE (CACHE FIRST) ---------------- */
+  const loadUserProfile = async (uid) => {
+    const cacheKey = `userProfile:${uid}`;
+
+    // ✅ 1️⃣ Try localForage first
+    const cached = await localforage.getItem(cacheKey);
+    if (cached) {
+      setUserRecord(cached);
       setLoading(false);
+
+      // ✅ Silent background refresh
+      refreshFromDB(uid, cacheKey);
+      return;
+    }
+
+    // ✅ 2️⃣ No cache → DB read
+    await refreshFromDB(uid, cacheKey);
+  };
+
+  const refreshFromDB = async (uid, cacheKey) => {
+    try {
+      const snap = await get(ref(db, `users/${uid}`));
+      if (snap.exists()) {
+        const data = snap.val();
+        setUserRecord(data);
+        await localforage.setItem(cacheKey, data);
+      } else {
+        setUserRecord(null);
+      }
+    } catch (err) {
+      console.error("Failed to load user profile:", err);
+      setUserRecord(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ---------------- AUTH LISTENER ---------------- */
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      if (!u) {
+        setUser(null);
+        setUserRecord(null);
+        setLoading(false);
+        return;
+      }
+
+      setUser(u);
+      setLoading(true);
+      await loadUserProfile(u.uid);
     });
-    return unsub;
+
+    return () => unsub();
   }, []);
 
+  /* ---------------- LOGIN / LOGOUT ---------------- */
   const loginWithEmail = (email, password) =>
     signInWithEmailAndPassword(auth, email, password);
 
-  const registerWithEmail = async (name, email, password) => {
-    const cred = await createUserWithEmailAndPassword(auth, email, password);
-    await updateProfile(cred.user, { displayName: name });
-    return cred.user;
+  const logout = async () => {
+    if (user?.uid) {
+      await localforage.removeItem(`userProfile:${user.uid}`);
+    }
+    await signOut(auth);
+    setUser(null);
+    setUserRecord(null);
   };
 
-  const loginWithGoogleChecked = async () => {
-    const provider = new GoogleAuthProvider();
-    const cred = await signInWithPopup(auth, provider);
-    const snap = await get(ref(db, `users/${cred.user.uid}`));
-    return { user: cred.user, isNewUser: !snap.exists() };
-  };
+/* ---------------- GOOGLE LOGIN ---------------- */
+const loginWithGoogleChecked = async () => {
+  const provider = new GoogleAuthProvider();
+  const result = await signInWithPopup(auth, provider);
 
-  const logout = () => signOut(auth);
+  const info = getAdditionalUserInfo(result);
+
+  return {
+    user: result.user,
+    isNewUser: info?.isNewUser === true,
+  };
+};
+
+
+
+
+  /* ---------------- UPDATE CACHE (IMPORTANT) ---------------- */
+  const updateUserRecordCache = async (newData) => {
+    if (!user?.uid) return;
+
+    const cacheKey = `userProfile:${user.uid}`;
+    const merged = { ...userRecord, ...newData };
+
+    setUserRecord(merged);
+    await localforage.setItem(cacheKey, merged);
+  };
 
   return (
     <AuthContext.Provider
       value={{
         user,
+        userRecord,
         loading,
         loginWithEmail,
-        registerWithEmail,
-        loginWithGoogleChecked,
         logout,
+         loginWithGoogleChecked,
+        updateUserRecordCache, // ✅ VERY IMPORTANT
       }}
     >
       {children}

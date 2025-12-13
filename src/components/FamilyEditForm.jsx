@@ -1,9 +1,40 @@
 // src/components/FamilyEditForm.jsx
+/**
+ * 🏠 FAMILY EDIT FORM – PHASE 1 (FOUNDATION)
+ *
+ * 🔒 FROZEN CONTRACT (DO NOT BREAK):
+ * ------------------------------------------------
+ * ✅ This component ONLY:
+ *    - Creates a family (meta)
+ *    - Creates initial members
+ *    - Updates family meta (city etc.)
+ *
+ * ✅ MEMBERS ARE STORED SEPARATELY
+ *    ❌ DO NOT store members under `families/{srno}/members`
+ *    ✅ Use `familyMembers/{srno}/{memberId}`
+ *
+ * ✅ WHY THIS DESIGN:
+ * ------------------------------------------------
+ * - Prevents full-family download on single member edit
+ * - Enables timestamp-based delta sync later
+ * - Keeps billing low
+ * - Scales to large families
+ *
+ * 🔥 IMPORTANT:
+ * ------------------------------------------------
+ * ❌ Do NOT:
+ *    - Read `/users/{uid}` here
+ *    - Read existing members here
+ *    - Touch join / approval logic
+ *    - Modify familyDetailPage now
+ *
+ * ✅ Later phases will update READ logic only
+ */
+
 import React, { useState } from "react";
 import { db } from "../firebase";
 import {
   ref,
-  get,
   set,
   update,
   runTransaction,
@@ -11,23 +42,25 @@ import {
 } from "firebase/database";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { ensurePublicUserIndex } from "../services/publicIndexService";
 
 export default function FamilyEditForm({ mode = "create", familyData }) {
-  const { user } = useAuth();
+  const { user, updateUserRecordCache } = useAuth();
   const navigate = useNavigate();
 
+  /* ---------------- FAMILY META ---------------- */
   const [family, setFamily] = useState({
     currentCity: familyData?.currentCity || "",
     nativeCity: familyData?.nativeCity || "",
   });
 
+  /* ---------------- MEMBERS FORM ---------------- */
   const [members, setMembers] = useState(
     familyData?.members
       ? Object.values(familyData.members)
       : [{ id: null, name: "", mobile: "", gender: "Male" }]
   );
 
+  /* ---------------- HELPERS ---------------- */
   const updateMember = (i, field, value) => {
     const copy = [...members];
     copy[i] = { ...copy[i], [field]: value };
@@ -35,7 +68,10 @@ export default function FamilyEditForm({ mode = "create", familyData }) {
   };
 
   const addMember = () => {
-    setMembers([...members, { id: null, name: "", mobile: "", gender: "Male" }]);
+    setMembers([
+      ...members,
+      { id: null, name: "", mobile: "", gender: "Male" },
+    ]);
   };
 
   const validate = () => {
@@ -45,6 +81,9 @@ export default function FamilyEditForm({ mode = "create", familyData }) {
     return null;
   };
 
+  /* ============================
+     MAIN SUBMIT
+  ============================= */
   const handleSubmit = async () => {
     const err = validate();
     if (err) {
@@ -57,11 +96,13 @@ export default function FamilyEditForm({ mode = "create", familyData }) {
       return;
     }
 
-    const timestamp = Date.now();
+    const now = Date.now();
     let srno;
 
     try {
-      /* ✅ SAFE SRNO GENERATION */
+      /* ---------------------------------
+         1️⃣ GENERATE FAMILY SRNO (SAFE)
+      --------------------------------- */
       if (mode === "create") {
         await runTransaction(ref(db, "master/nextFamilySrno"), (val) => {
           srno = String(val || 1);
@@ -71,62 +112,61 @@ export default function FamilyEditForm({ mode = "create", familyData }) {
         srno = familyData.srno;
       }
 
-      /* ✅ BUILD MEMBERS SAFELY */
-      const membersPayload = {};
-      members.forEach((m) => {
-        const id = m.id || push(ref(db)).key;
-        membersPayload[id] = {
-          id,
+      /* ---------------------------------
+         2️⃣ WRITE FAMILY META (NO MEMBERS)
+      --------------------------------- */
+      if (mode === "create") {
+        await set(ref(db, `families/${srno}`), {
+          currentCity: family.currentCity,
+          nativeCity: family.nativeCity,
+          createdBy: user.uid,
+          editorEmails: { [user.uid]: true },
+          createdAt: now,
+          updatedAt: now,
+        });
+      } else {
+        await update(ref(db, `families/${srno}`), {
+          currentCity: family.currentCity,
+          nativeCity: family.nativeCity,
+          updatedAt: now,
+        });
+      }
+
+      /* ---------------------------------
+         3️⃣ WRITE MEMBERS (SEPARATE NODE)
+      --------------------------------- */
+      const memberWrites = members.map((m) => {
+        const id =
+          m.id || push(ref(db, `familyMembers/${srno}`)).key;
+
+        return set(ref(db, `familyMembers/${srno}/${id}`), {
           name: m.name,
           mobile: m.mobile,
           gender: m.gender,
           countryCode: "+91",
-          active: m.active !== false,
-        };
-      });
-
-      const familyPayload = {
-        currentCity: family.currentCity,
-        nativeCity: family.nativeCity,
-        updatedAt: timestamp,
-        members: membersPayload,
-      };
-
-      /* ✅ WRITE FAMILY */
-      if (mode === "create") {
-        await set(ref(db, `families/${srno}`), {
-          ...familyPayload,
-          createdAt: timestamp,
+          active: true,
+          createdAt: now,
+          updatedAt: now,
           createdBy: user.uid,
-          editorEmails: { [user.uid]: true },
         });
-      } else {
-        await update(ref(db, `families/${srno}`), familyPayload);
-      }
-
-      /* ✅ SUMMARY */
-      await update(ref(db, `familyDetails/${srno}`), {
-        currentCity: family.currentCity,
-        nativeCity: family.nativeCity,
-        totalMembers: Object.values(membersPayload).filter(m => m.active).length,
-        lastUpdateTimestamp: timestamp,
       });
 
-      /* ✅ USER LINK (CREATE ONLY) */
-      if (mode === "create") {
-        const userSnap = await get(ref(db, `users/${user.uid}`));
-        const prevRole = userSnap.val()?.role;
+      await Promise.all(memberWrites);
 
+      /* ---------------------------------
+         4️⃣ LINK USER (CREATE ONLY)
+         ✅ NO READ – CACHE UPDATE ONLY
+      --------------------------------- */
+      if (mode === "create") {
         await update(ref(db, `users/${user.uid}`), {
           familySrno: srno,
-          role: prevRole === "admin" ? "admin" : "member",
+          role: "member",
         });
 
-        await ensurePublicUserIndex({
-          uid: user.uid,
-          email: user.email,
+        // ✅ Update AuthContext cache (NO reload required)
+        await updateUserRecordCache({
           familySrno: srno,
-          provider: user.providerData?.[0]?.providerId || "google",
+          role: "member",
         });
 
         navigate(`/family/${srno}`);
@@ -139,8 +179,12 @@ export default function FamilyEditForm({ mode = "create", familyData }) {
     }
   };
 
+  /* ============================
+     UI
+  ============================= */
   return (
     <div className="space-y-4">
+      {/* FAMILY INFO */}
       <input
         className="border p-2 w-full"
         placeholder="Current City"
@@ -159,6 +203,7 @@ export default function FamilyEditForm({ mode = "create", familyData }) {
         }
       />
 
+      {/* MEMBERS */}
       <h3 className="text-lg font-bold">Members</h3>
 
       {members.map((m, i) => (
@@ -167,18 +212,24 @@ export default function FamilyEditForm({ mode = "create", familyData }) {
             className="border p-2 w-full"
             placeholder="Name"
             value={m.name}
-            onChange={(e) => updateMember(i, "name", e.target.value)}
+            onChange={(e) =>
+              updateMember(i, "name", e.target.value)
+            }
           />
           <input
             className="border p-2 w-full"
             placeholder="Mobile"
             value={m.mobile}
-            onChange={(e) => updateMember(i, "mobile", e.target.value)}
+            onChange={(e) =>
+              updateMember(i, "mobile", e.target.value)
+            }
           />
           <select
             className="border p-2 w-full"
             value={m.gender}
-            onChange={(e) => updateMember(i, "gender", e.target.value)}
+            onChange={(e) =>
+              updateMember(i, "gender", e.target.value)
+            }
           >
             <option>Male</option>
             <option>Female</option>

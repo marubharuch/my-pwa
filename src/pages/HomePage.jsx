@@ -1,55 +1,51 @@
-// src/pages/HomePage.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-import { Link } from "react-router-dom";
-import { db } from "../firebase";
-import { ref, get } from "firebase/database";
+import { Link, useNavigate } from "react-router-dom";
 
 export default function HomePage() {
-  const { user, logout } = useAuth();
-  const [userRecord, setUserRecord] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { user, userRecord, loading, logout } = useAuth();
+  const navigate = useNavigate();
 
+  // ❗ ALL HOOKS MUST BE AT THE TOP
   useEffect(() => {
-    if (!user) return;
-
-    async function loadUser() {
-      const snap = await get(ref(db, `users/${user.uid}`));
-      if (snap.exists()) setUserRecord(snap.val());
-      setLoading(false);
+    if (!loading && user && !userRecord) {
+      navigate("/register", { replace: true });
     }
+  }, [loading, user, userRecord, navigate]);
 
-    loadUser();
-  }, [user]);
-
+  /* ---------------- AUTH GATE ---------------- */
   if (!user) {
     return <div className="p-6 text-center">Please login</div>;
   }
 
+  /* ---------------- GLOBAL LOADING ---------------- */
   if (loading) {
     return <div className="p-6 text-center">Loading your account…</div>;
   }
 
-  const familySrno = userRecord?.familySrno;
-  const pendingJoin = userRecord?.pendingJoin;
-  const isAdmin = userRecord?.role === "admin";
+  /* ---------------- SAFETY: USER RECORD MISSING ---------------- */
+  if (!userRecord) {
+    // the redirect happens in useEffect → SAFE
+    return <div className="p-6 text-center">Setting up your account…</div>;
+  }
+
+  /* ---------------- UI CONTENT ---------------- */
+  const familySrno = userRecord.familyId; // FIXED
+  const pendingJoin = userRecord.pendingJoin;
+  const isAdmin = userRecord.role === "admin";
 
   return (
     <div className="p-4 max-w-md mx-auto">
-
       <h1 className="text-2xl font-bold mb-4 text-center">
         Welcome, {userRecord.name}
       </h1>
 
-      {/* USER INFO */}
       <div className="bg-white shadow rounded p-4 mb-6 text-sm">
         <p><strong>Email:</strong> {userRecord.email}</p>
         <p><strong>Role:</strong> {userRecord.role}</p>
       </div>
 
-      {/* ✅ ✅ ✅ STATE HANDLING */}
-
-      {/* ✅ STATE 3 — APPROVED */}
+      {/* STATE A: FAMILY LINKED */}
       {familySrno && (
         <Link
           to={`/family/${familySrno}`}
@@ -59,15 +55,11 @@ export default function HomePage() {
         </Link>
       )}
 
-      {/* ✅ STATE 2 — PENDING */}
+      {/* STATE B: JOIN PENDING */}
       {!familySrno && pendingJoin && (
         <div className="bg-yellow-50 border border-yellow-300 p-4 rounded mb-4 text-sm text-center">
-          <p className="font-semibold mb-1">
-            ⏳ Join Request Pending
-          </p>
-          <p className="mb-3">
-            Family #{pendingJoin.familySrno}
-          </p>
+          <p className="font-semibold mb-1">⏳ Join Request Pending</p>
+          <p className="mb-3">Family #{pendingJoin.familySrno}</p>
 
           <Link
             to="/join-family"
@@ -78,7 +70,7 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* ✅ STATE 1 — NO FAMILY */}
+      {/* STATE C: NO FAMILY */}
       {!familySrno && !pendingJoin && (
         <div className="space-y-3">
           <Link
@@ -97,7 +89,6 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* ✅ ADMIN */}
       {isAdmin && (
         <Link
           to="/admin"
@@ -107,14 +98,12 @@ export default function HomePage() {
         </Link>
       )}
 
-      {/* LOGOUT */}
       <button
         onClick={logout}
         className="w-full bg-red-500 text-white py-2 rounded mt-4"
       >
         Logout
       </button>
-
     </div>
   );
 }

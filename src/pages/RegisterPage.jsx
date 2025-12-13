@@ -1,205 +1,163 @@
 // src/pages/RegisterPage.jsx
+
+/**
+ * 🧾 REGISTER PAGE – FROZEN VERSION (DO NOT BREAK)
+ *
+ * PURPOSE:
+ * ------------------------------------------------
+ * Completes user profile AFTER authentication.
+ * This page NEVER authenticates directly.
+ *
+ * AUTH SOURCES:
+ * ------------------------------------------------
+ * ✅ Firebase Auth user → comes from AuthContext (`user`)
+ * ✅ Profile data       → comes from AuthContext (`userRecord`)
+ *
+ * CRITICAL RULES (DO NOT VIOLATE):
+ * ------------------------------------------------
+ * ❌ NEVER read `/users/{uid}` here
+ * ❌ NEVER call `get(ref(db, 'users/...'))`
+ * ✅ `/users/{uid}` is written EXACTLY ONCE
+ *
+ * RESPONSIBILITY:
+ * ------------------------------------------------
+ * - Ask missing details (name, mobile)
+ * - Create `/users/{uid}` if missing
+ * - Sync AuthContext cache
+ * - Redirect to Home
+ */
+
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { useNavigate, Link, useLocation } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { db } from "../firebase";
-import { ref, get, set } from "firebase/database";
+import { ref, set } from "firebase/database";
 
 export default function RegisterPage() {
-  const { registerWithEmail, user } = useAuth();
+  const { user, userRecord, loading, updateUserRecordCache } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
-  // ✅ true only when redirected after Google login
   const fromGoogle = location.state?.fromGoogle === true;
 
-  const [name, setName] = useState(user?.displayName || "");
+  /* ---------------- FORM STATE ---------------- */
+  const [name, setName] = useState("");
   const [mobile, setMobile] = useState("");
-  const [email, setEmail] = useState(user?.email || "");
-  const [password, setPassword] = useState("");
-  const [familySrno, setFamilySrno] = useState("");
-
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  /* ===============================
-     BLOCK WRONG ACCESS
-  =============================== */
+  /* ---------------- AUTH SAFETY ---------------- */
   useEffect(() => {
-    // ❌ logged-in user cannot open register again
-    if (user && !fromGoogle) {
-      navigate("/");
+    if (loading) return;
+
+    if (!user) {
+      navigate("/login");
+      return;
     }
-  }, [user, fromGoogle, navigate]);
 
-  /* ===============================
-     SAVE USER PROFILE ONLY
-  =============================== */
-  async function saveUserProfile(uid, data) {
-    await set(ref(db, `users/${uid}`), {
-      name: data.name,
-      email: data.email,
-      mobile: data.mobile || "",
-      role: "member",
-      createdAt: Date.now(),
-      ...(data.familySrno ? { pendingFamilySrno: data.familySrno } : {})
-    });
-  }
+    if (userRecord) {
+      navigate("/");
+      return;
+    }
 
-  /* ===============================
-     EMAIL + PASSWORD REGISTER
-  =============================== */
-  const handleRegister = async (e) => {
+    if (fromGoogle && user.displayName) {
+      setName(user.displayName);
+    }
+  }, [user, userRecord, loading, fromGoogle, navigate]);
+
+  /* ---------------- CREATE USER PROFILE ---------------- */
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
-    setLoading(true);
 
-    try {
-      // ✅ Create auth user
-      const newUser = await registerWithEmail(name, email, password);
-
-      // ✅ Create /users/{uid}
-      await saveUserProfile(newUser.uid, {
-        name,
-        email,
-        mobile,
-        familySrno: familySrno || null
-      });
-
-      // ✅ Redirect based on choice
-      navigate("/")
-    } catch (err) {
-      console.error(err);
-      setError("Registration failed");
+    if (!name.trim()) {
+      setError("Name is required");
+      return;
     }
 
-    setLoading(false);
-  };
+    if (!mobile.trim()) {
+      setError("Mobile number is required");
+      return;
+    }
 
-  /* ===============================
-     GOOGLE CONTINUE (NO AUTH HERE)
-  =============================== */
-  const handleGoogleContinue = async () => {
     if (!user) return;
 
-    setError("");
-    setLoading(true);
-
     try {
-      const userSnap = await get(ref(db, `users/${user.uid}`));
+      setSaving(true);
 
-      if (!userSnap.exists()) {
-        // ✅ Create /users/{uid} only once
-        await saveUserProfile(user.uid, {
-          name,
-          email: user.email,
-          mobile,
-          familySrno: familySrno || null
-        });
-      }
+      const profile = {
+        name: name.trim(),
+        email: user.email,
+        mobile: mobile.trim(),
+        role: "guest",
+        familySrno: null,
+        createdAt: Date.now(),
+        provider: user.providerData?.[0]?.providerId || "password",
+      };
 
-      
-        navigate("/")       
+      // ✅ WRITE ONCE
+      await set(ref(db, `users/${user.uid}`), profile);
+
+      // ✅ SYNC AUTH CONTEXT CACHE (NO RELOAD NEEDED)
+      await updateUserRecordCache(profile);
+
+      // ✅ GO HOME
+      navigate("/");
     } catch (err) {
-      console.error(err);
-      setError("Google registration failed");
+      console.error("Registration failed:", err);
+      setError("Registration failed. Please try again.");
+    } finally {
+      setSaving(false);
     }
-
-    setLoading(false);
   };
 
-  /* ===============================
-     UI
-  =============================== */
+  /* ---------------- UI ---------------- */
+  if (loading || !user || userRecord) {
+    return <div className="p-6 text-center">Preparing registration…</div>;
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
       <div className="bg-white p-6 rounded shadow w-full max-w-sm">
-
-        <h2 className="text-xl font-bold text-center mb-4">
+        <h2 className="text-2xl font-bold text-center mb-4">
           Complete Registration
         </h2>
 
         {error && (
-          <p className="text-red-500 text-center mb-2">{error}</p>
+          <p className="text-red-500 text-sm text-center mb-3">{error}</p>
         )}
 
-        {/* ✅ GOOGLE CONTINUE */}
-        {fromGoogle && (
-          <button
-            onClick={handleGoogleContinue}
-            className="w-full bg-red-500 text-white py-2 rounded mb-3"
-            disabled={loading}
-          >
-            {loading ? "Please wait..." : "Continue"}
-          </button>
-        )}
-
-        {/* ✅ COMMON FORM */}
-        <form onSubmit={handleRegister}>
+        <form onSubmit={handleSubmit} className="space-y-3">
           <input
-            className="w-full border p-2 mb-2"
+            className="w-full border px-3 py-2 rounded"
             placeholder="Full Name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            required
           />
 
           <input
-            className="w-full border p-2 mb-2"
+            className="w-full border px-3 py-2 rounded"
             placeholder="Mobile Number"
             value={mobile}
             onChange={(e) => setMobile(e.target.value)}
-            required
           />
 
-          <input
-            className="w-full border p-2 mb-2"
-            placeholder="Email"
-            type="email"
-            value={email}
-            disabled={fromGoogle}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-
-          {!fromGoogle && (
-            <input
-              className="w-full border p-2 mb-2"
-              placeholder="Password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          )}
-
-       {/*   <input
-            className="w-full border p-2 mb-3"
-            placeholder="Family Sr No (optional)"
-            value={familySrno}
-            onChange={(e) => setFamilySrno(e.target.value)}
-          />
-*/}
-          {!fromGoogle && (
-            <button
-              className="w-full bg-blue-600 text-white py-2 rounded"
-              disabled={loading}
-            >
-              {loading ? "Please wait..." : "Register"}
-            </button>
-          )}
+          <button
+            type="submit"
+            disabled={saving}
+            className="w-full bg-blue-600 text-white py-2 rounded"
+          >
+            {saving ? "Saving…" : "Finish Registration"}
+          </button>
         </form>
 
-        {!fromGoogle && (
-          <p className="text-center mt-4 text-sm">
-            Already have an account?{" "}
-            <Link to="/login" className="text-blue-600">
-              Login
-            </Link>
+        {fromGoogle && (
+          <p className="text-xs text-gray-500 text-center mt-3">
+            Signed in with Google
           </p>
         )}
-
       </div>
     </div>
   );
 }
+  

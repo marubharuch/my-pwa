@@ -1,103 +1,106 @@
 // src/components/Navbar.jsx
-import React, { useEffect, useState } from "react";
+
+/**
+ * 🧭 GLOBAL NAVBAR – MOBILE FIRST (READ-OPTIMIZED)
+ *
+ * ✅ IMPORTANT RULES (DO NOT BREAK):
+ * ------------------------------------------------
+ * - Navbar MUST NOT read from Firebase database
+ * - User profile (familySrno, role) comes ONLY from AuthContext
+ * - AuthContext is the SINGLE source of truth
+ *
+ * ✅ Allowed:
+ * - useAuth().user
+ * - useAuth().userRecord
+ *
+ * ❌ Forbidden:
+ * - get(ref(db, `users/...`))
+ */
+
+import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { db } from "../firebase";
-import { ref, get } from "firebase/database";
+
+import {
+  HiHome,
+  HiUsers,
+  HiUserGroup,
+  HiLogout,
+} from "react-icons/hi";
 
 export default function Navbar() {
-  const { user, logout } = useAuth();
-  const [profile, setProfile] = useState(null);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const { user, userRecord, logout } = useAuth();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    if (!user) {
-      setProfile(null);
-      return;
-    }
-
-    const loadProfile = async () => {
-      const snap = await get(ref(db, `users/${user.uid}`));
-      if (snap.exists()) {
-        setProfile(snap.val());
-      }
-    };
-
-    loadProfile();
-  }, [user]);
+  const familySrno = userRecord?.familySrno;
 
   const handleLogout = async () => {
-    setMenuOpen(false);
     await logout();
     navigate("/login");
   };
 
   return (
-    <nav className="bg-blue-600 text-white fixed w-full top-0 shadow-md z-50">
-      <div className="max-w-4xl mx-auto px-4 flex items-center justify-between h-14">
-        <Link to="/" className="font-bold text-lg">
+    <nav className="bg-blue-600 fixed top-0 w-full z-50 shadow">
+      <div className="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
+
+        {/* HOME ICON */}
+        <Link to="/" className="text-white text-2xl">
+          <HiHome />
+        </Link>
+
+        {/* LOGO */}
+        <Link to="/" className="text-white font-semibold">
           Oswal Directory
         </Link>
 
-        <button
-          className="sm:hidden block text-white text-2xl"
-          onClick={() => setMenuOpen(!menuOpen)}
-        >
-          ☰
-        </button>
+        {/* ================= MOBILE ================= */}
+        <div className="flex items-center gap-5 md:hidden text-white text-[11px]">
 
-        <div className="hidden sm:flex space-x-6">
-          <Link to="/">Home</Link>
-          <Link to="/families">Family List</Link>
-          <Link to="/create-family">Create Family</Link>
+          <Link to="/dir" className="flex flex-col items-center">
+            <HiUsers className="text-xl" />
+            <span>Directory</span>
+          </Link>
 
-          {profile?.familySrno && (
-            <Link to={`/family/${profile.familySrno}`}>My Family</Link>
+          {/* ✅ MY FAMILY */}
+          {familySrno && (
+            <Link
+              to={`/family/${familySrno}`}
+              className="flex flex-col items-center"
+            >
+              <HiUserGroup className="text-xl" />
+              <span>My Family</span>
+            </Link>
           )}
 
-          {profile?.role === "admin" && (
-            <Link to="/admin">Admin Panel</Link>
-          )}
-
-          {user ? (
-            <button onClick={handleLogout}>Logout</button>
-          ) : (
-            <Link to="/login">Login</Link>
+          {user && (
+            <button
+              onClick={handleLogout}
+              className="flex flex-col items-center"
+            >
+              <HiLogout className="text-xl" />
+              <span>Logout</span>
+            </button>
           )}
         </div>
-      </div>
 
-      {menuOpen && (
-        <div className="sm:hidden bg-blue-700 text-white px-4 pb-3 space-y-2">
-          <Link to="/" onClick={() => setMenuOpen(false)}>Home</Link>
-          <Link to="/families" onClick={() => setMenuOpen(false)}>Family List</Link>
-          <Link to="/create-family" onClick={() => setMenuOpen(false)}>Create Family</Link>
+        {/* ================= DESKTOP ================= */}
+        <div className="hidden md:flex gap-6 text-white text-sm items-center">
+          <Link to="/">Home</Link>
+          <Link to="/dir">Family List</Link>
 
-          {profile?.familySrno && (
-            <Link
-              to={`/family/${profile.familySrno}`}
-              onClick={() => setMenuOpen(false)}
-            >
+          {familySrno && (
+            <Link to={`/family/${familySrno}`}>
               My Family
             </Link>
           )}
 
-          {profile?.role === "admin" && (
-            <Link to="/admin" onClick={() => setMenuOpen(false)}>
-              Admin Panel
-            </Link>
-          )}
-
-          {user ? (
-            <button onClick={handleLogout}>Logout</button>
-          ) : (
-            <Link to="/login" onClick={() => setMenuOpen(false)}>
-              Login
-            </Link>
+          {user && (
+            <button onClick={handleLogout}>
+              Logout
+            </button>
           )}
         </div>
-      )}
+      </div>
     </nav>
   );
 }

@@ -11,9 +11,9 @@ import JoinFamilyPage from "./pages/JoinFamilyPage";
 import CreateFamilyPage from "./pages/CreateFamilyPage";
 import FamilyListPage from "./pages/FamilyListPage";
 import FamilyDetailPage from "./pages/FamilyDetailPage";
-
+import RegisterEmailPage from "./pages/RegisterEmailPage";
 import ProtectedRoute from "./components/ProtectedRoute";
-
+import FamilyDirectoryPage from "./pages/FamilyDirectoryPage";
 
 import DebugPage from "./pages/DebugPage";
 
@@ -26,6 +26,8 @@ export default function App() {
         {/* PUBLIC ROUTES */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/register-email" element={<RegisterEmailPage />} />
+
 
 <Route
   path="/debug"
@@ -70,7 +72,16 @@ export default function App() {
     </ProtectedRoute>
   }
 />
-
+<Route
+          path="/dir"
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                <FamilyDirectoryPage/>
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
 
 
 

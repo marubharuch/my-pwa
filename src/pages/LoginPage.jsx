@@ -1,23 +1,49 @@
+// src/pages/LoginPage.jsx
+
+/**
+ * 🔐 LOGIN PAGE – AUTH ENTRY POINT
+ *
+ * FEATURES (DO NOT REMOVE WHEN ADDING NEW CODE):
+ * ------------------------------------------------
+ * ✅ Email + Password login
+ * ✅ Google login (with new-user redirect to Register)
+ * ✅ Forgot Password (Firebase reset email)
+ * ✅ Forgot Email (lookup via publicUserIndex by Family SrNo)
+ *
+ * IMPORTANT FOR FUTURE EDITS:
+ * ------------------------------------------------
+ * - Do NOT remove modal states:
+ *   showForgotPassword, showForgotEmail
+ * - Forgot Email is NOT authentication – it is public lookup.
+ * - Always add features BELOW existing sections, never replace them.
+ */
+
 import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { Link, useNavigate } from "react-router-dom";
 import { sendPasswordResetEmail } from "firebase/auth";
-import { auth } from "../firebase";
+import { auth,db } from "../firebase";
+import { ref, get } from "firebase/database";
+
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const { loginWithEmail, loginWithGoogleChecked } = useAuth();
 
+  /* ---------------- LOGIN FIELDS ---------------- */
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
+  /* ---------------- FORGOT PASSWORD ---------------- */
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
 
+  /* ---------------- FORGOT EMAIL (SRNO LOOKUP) ---------------- */
   const [showForgotEmail, setShowForgotEmail] = useState(false);
   const [srno, setSrno] = useState("");
   const [emailList, setEmailList] = useState([]);
 
+  /* ---------------- UI STATE ---------------- */
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -34,25 +60,30 @@ export default function LoginPage() {
     }
   };
 
-  /* ---------------- GOOGLE LOGIN (CORRECT) ---------------- */
+  /* ---------------- GOOGLE LOGIN ---------------- */
   const handleGoogleLogin = async () => {
-    try {
-      const { isNewUser } = await loginWithGoogleChecked();
+  setError("");
+  setLoading(true);
 
-      if (isNewUser) {
-        navigate("/register", { state: { fromGoogle: true } });
-      } else {
-        navigate("/");
-      }
-    } catch {
-      setError("Google login failed");
-    }
-  };
+  try {
+    await loginWithGoogleChecked();
 
-  /* ---------------- FORGOT PASSWORD ---------------- */
+    // ✅ ALWAYS go home
+    // Home/Register pages decide what happens next
+    navigate("/");
+  } catch (err) {
+    console.error("Google login failed:", err);
+    setError("Google login failed");
+  }
+
+  setLoading(false);
+};
+
+
+  /* ---------------- FORGOT PASSWORD ACTION ---------------- */
   const handleForgotPassword = async () => {
     if (!forgotEmail) {
-      setError("Please enter email");
+      setError("Please enter your email");
       return;
     }
 
@@ -66,73 +97,81 @@ export default function LoginPage() {
     }
   };
 
-  /* ---------------- FORGOT EMAIL (PUBLIC INDEX) ---------------- */
-  const findEmailsBySrNo = async () => {
-    setError("");
-    setEmailList([]);
-    setLoading(true);
+  /* ---------------- FORGOT EMAIL ACTION ---------------- */
+/* ---------------- FORGOT EMAIL ACTION (FIXED) ---------------- */
 
-    if (!srno) {
-      setError("Enter Family Serial Number");
+
+
+const findEmailsBySrNo = async () => {
+  setError("");
+  setEmailList([]);
+  setLoading(true);
+
+  if (!srno) {
+    setError("Enter Family Serial Number");
+    setLoading(false);
+    return;
+  }
+
+  try {
+    const snap = await get(ref(db, `publicUserIndex/${srno}`));
+
+    console.log("Forgot email lookup snapshot:", snap.val());
+
+    if (!snap.exists()) {
+      setError("No email records found for this family");
       setLoading(false);
       return;
     }
 
-    try {
-      // NOTE: keep this public index logic here – this is NOT auth
-      const snap = await window.firebase
-        .database()
-        .ref(`publicUserIndex/${srno}`)
-        .get();
+    const list = Object.values(snap.val()).map((u) => ({
+      maskedEmail: u.maskedEmail,
+      provider: u.provider,
+    }));
 
-      if (!snap.exists()) {
-        setError("No emails found for this family");
-        setLoading(false);
-        return;
-      }
+    setEmailList(list);
+  } catch (err) {
+    console.error("Forgot email lookup failed:", err);
+    setError("Unable to fetch email list");
+  }
 
-      const list = Object.values(snap.val()).map((u) => ({
-        maskedEmail: u.maskedEmail,
-        provider: u.provider,
-      }));
+  setLoading(false);
+};
 
-      setEmailList(list);
-    } catch {
-      setError("Unable to fetch email list");
-    }
 
-    setLoading(false);
-  };
+  /* ============================ */
+  /* ============ UI ============ */
+  /* ============================ */
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
-      <div className="bg-white p-6 rounded shadow w-full max-w-sm relative">
+     <div className="min-h-screen bg-gray-100 flex items-center justify-center px-4">
+      <div className="bg-white rounded-lg shadow w-full max-w-sm p-6">
 
-        <h2 className="text-2xl font-bold text-center mb-5">Login</h2>
+        <h1 className="text-2xl font-bold text-center mb-6">Login</h1>
 
         {error && (
-          <p className="text-red-500 text-sm text-center mb-3">{error}</p>
+          <p className="text-red-500 text-sm text-center mb-4">{error}</p>
         )}
 
         {/* GOOGLE LOGIN */}
         <button
           onClick={handleGoogleLogin}
-          className="w-full bg-red-500 text-white py-2 rounded mb-4"
+          className="w-full h-11 bg-red-500 text-white rounded font-medium mb-4"
         >
           Continue with Google
         </button>
 
         {/* DIVIDER */}
-        <div className="flex items-center my-4">
-          <div className="flex-grow h-px bg-gray-300" />
-          <span className="mx-2 text-gray-500 text-sm">OR</span>
-          <div className="flex-grow h-px bg-gray-300" />
+        <div className="flex items-center mb-4">
+          <div className="flex-1 h-px bg-gray-300" />
+          <span className="mx-3 text-xs text-gray-500">OR</span>
+          <div className="flex-1 h-px bg-gray-300" />
         </div>
 
         {/* EMAIL LOGIN */}
-        <form onSubmit={handleEmailLogin}>
+        <form onSubmit={handleEmailLogin} className="space-y-3">
           <input
-            className="w-full border px-3 py-2 rounded mb-3"
+            className="w-full border rounded px-3 py-2.5"
             placeholder="Email"
             type="email"
             value={email}
@@ -141,7 +180,7 @@ export default function LoginPage() {
           />
 
           <input
-            className="w-full border px-3 py-2 rounded mb-2"
+            className="w-full border rounded px-3 py-2.5"
             placeholder="Password"
             type="password"
             value={password}
@@ -149,27 +188,100 @@ export default function LoginPage() {
             required
           />
 
-          <div
-            onClick={() => setShowForgotPassword(true)}
-            className="text-right text-blue-600 text-sm mb-4 cursor-pointer"
-          >
-            Forgot Password?
+          <div className="flex justify-between text-sm">
+            <button
+              type="button"
+              onClick={() => setShowForgotPassword(true)}
+              className="text-blue-600"
+            >
+              Forgot Password?
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowForgotEmail(true)}
+              className="text-blue-600"
+            >
+              Forgot Email?
+            </button>
           </div>
 
           <button
             type="submit"
-            className="w-full bg-blue-600 text-white py-2 rounded"
+            className="w-full h-11 bg-blue-600 text-white rounded font-medium"
           >
             Login
           </button>
         </form>
 
-        <p className="text-center text-sm mt-4">
-          New user?{" "}
-          <Link to="/register" className="text-blue-500">
-            Register here
-          </Link>
-        </p>
+    <p className="text-center text-sm mt-5 text-gray-600">
+  New user?{" "}
+  <Link
+    to="/register-email"
+    className="text-blue-600 font-medium"
+  >
+    Create account
+  </Link>
+</p>
+
+
+        {/* FORGOT PASSWORD */}
+        {showForgotPassword && (
+          <div className="mt-6 p-4 bg-gray-50 rounded border space-y-2">
+            <input
+              className="w-full border rounded px-3 py-2.5"
+              placeholder="Enter your email"
+              value={forgotEmail}
+              onChange={(e) => setForgotEmail(e.target.value)}
+            />
+            <button
+              onClick={handleForgotPassword}
+              className="w-full h-10 bg-blue-600 text-white rounded"
+            >
+              Send Reset Email
+            </button>
+            <button
+              onClick={() => setShowForgotPassword(false)}
+              className="w-full text-sm text-gray-600"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {/* FORGOT EMAIL */}
+        {showForgotEmail && (
+          <div className="mt-6 p-4 bg-gray-50 rounded border space-y-2">
+            <input
+              className="w-full border rounded px-3 py-2.5"
+              placeholder="Family Serial Number"
+              value={srno}
+              onChange={(e) => setSrno(e.target.value)}
+            />
+            <button
+              onClick={findEmailsBySrNo}
+              className="w-full h-10 bg-green-600 text-white rounded"
+              disabled={loading}
+            >
+              {loading ? "Searching…" : "Find Email"}
+            </button>
+
+            {emailList.length > 0 && (
+              <div className="text-sm bg-white border rounded p-2 space-y-1">
+                {emailList.map((e, i) => (
+                  <div key={i}>📧 {e.maskedEmail} ({e.provider})</div>
+                ))}
+              </div>
+            )}
+
+            <button
+              onClick={() => setShowForgotEmail(false)}
+              className="w-full text-sm text-gray-600"
+            >
+              Close
+            </button>
+          </div>
+        )}
+
       </div>
     </div>
   );

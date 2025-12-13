@@ -1,86 +1,76 @@
 // src/pages/CreateFamilyPage.jsx
-import React, { useEffect, useState } from "react";
+
+/**
+ * 🏠 CREATE FAMILY PAGE
+ *
+ * IMPORTANT REMARKS (DO NOT REMOVE):
+ * ------------------------------------------------
+ * ✅ This page DOES NOT read RTDB directly anymore
+ * ✅ User profile (role, familySrno) MUST come from AuthContext
+ * ✅ This avoids repeated `/users/{uid}` reads across pages
+ *
+ * ACCESS RULES:
+ * ------------------------------------------------
+ * - Not logged in → redirect to /login
+ * - Logged in but no profile yet → redirect to /register
+ * - Non-admin + already in family → blocked
+ * - Admin OR user without family → allowed
+ *
+ * ⚠️ When adding new features:
+ *    Do NOT add direct `get(ref(db, users/...))` here.
+ */
+
+import React, { useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { db } from "../firebase";
-import { ref, get } from "firebase/database";
 import FamilyEditForm from "../components/FamilyEditForm";
 
 export default function CreateFamilyPage() {
-  const { user } = useAuth();
+  const { user, userRecord, loading } = useAuth();
   const navigate = useNavigate();
 
-  const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  // LOAD USER PROFILE
-  useEffect(() => {
-    async function loadProfile() {
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const snap = await get(ref(db, `users/${user.uid}`));
-        if (snap.exists()) {
-          setProfile(snap.val());
-        } else {
-          setProfile(null);
-        }
-      } catch (err) {
-        console.error("Error loading profile:", err);
-        setProfile(null);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadProfile();
-  }, [user]);
-
-  // AUTH SAFETY
+  /* ---------------- AUTH SAFETY ---------------- */
   useEffect(() => {
     if (!loading && !user) {
       navigate("/login");
     }
   }, [user, loading, navigate]);
 
-  // FIRST-TIME USER → REGISTER
+  /* ---------------- PROFILE NOT READY ---------------- */
   useEffect(() => {
-    if (!loading && user && profile === null) {
+    if (!loading && user && userRecord === null) {
       navigate("/register");
     }
-  }, [loading, user, profile, navigate]);
+  }, [loading, user, userRecord, navigate]);
 
   if (loading) {
     return (
       <div className="p-4 max-w-md mx-auto">
-        <p>Loading your account...</p>
+        <p>Loading your account…</p>
       </div>
     );
   }
 
-  if (!profile) {
+  if (!userRecord) {
     return null; // redirected
   }
 
-  const isAdmin = profile.role === "admin";
-  const hasFamily = !!profile.familySrno;
+  const isAdmin = userRecord.role === "admin";
+  const hasFamily = !!userRecord.familySrno;
 
-  // Non-admin & already has family
+  /* ---------------- BLOCK NON-ADMIN ---------------- */
   if (!isAdmin && hasFamily) {
     return (
       <div className="p-4 max-w-md mx-auto">
         <h1 className="text-xl font-bold mb-4">Create Family</h1>
 
         <p className="mb-4 text-sm text-gray-700">
-          You are already linked to Family #{profile.familySrno}.
-          A user can be member of only one family.
+          You are already linked to <b>Family #{userRecord.familySrno}</b>.
+          A user can belong to only one family.
         </p>
 
         <button
-          onClick={() => navigate(`/family/${profile.familySrno}`)}
+          onClick={() => navigate(`/family/${userRecord.familySrno}`)}
           className="w-full bg-blue-600 text-white py-2 rounded mb-2"
         >
           Go to My Family
@@ -93,14 +83,14 @@ export default function CreateFamilyPage() {
     );
   }
 
-  // ADMIN OR USER WITHOUT FAMILY
+  /* ---------------- ALLOWED ---------------- */
   return (
     <div className="p-4 max-w-md mx-auto">
       <h1 className="text-xl font-bold mb-4">Create New Family</h1>
 
       {isAdmin ? (
         <p className="text-xs text-gray-600 mb-3">
-          You are an <b>admin</b>. You can create multiple families.
+          You are an <b>admin</b>. You may create multiple families.
         </p>
       ) : (
         <p className="text-xs text-gray-600 mb-3">
