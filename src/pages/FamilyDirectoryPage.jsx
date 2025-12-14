@@ -59,9 +59,14 @@ export default function FamilyDirectoryPage() {
   const [nativeCity, setNativeCity] = useState("");
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState({});
+const [pressTimer, setPressTimer] = useState(null);
 
   const LOCAL_KEY = "familiesCache";
   const PRIMARY_COUNT = 1;
+
+  
+
+
 
   useEffect(() => {
     async function load() {
@@ -93,6 +98,14 @@ export default function FamilyDirectoryPage() {
       />
     );
   };
+  const showMemberInfo = (m) => {
+  alert(
+    `🎂 Birthdate: ${m.birthdate || "NA"}
+🎓 Education: ${m.education || "NA"}
+🏠 City: ${m.currentCity} (${m.nativeCity})`
+  );
+};
+
 
   const splitMembers = (membersObj) => {
     const list = Object.values(membersObj || {});
@@ -114,6 +127,9 @@ export default function FamilyDirectoryPage() {
     : [];
 
   /* GROUP MODE */
+  const noFilterApplied =
+  !searchMode && !currentCity && !nativeCity;
+
   const filteredFamilies = !searchMode
     ? families.filter((f) => {
         const ok1 = !currentCity || f.info.currentCity === currentCity;
@@ -122,12 +138,15 @@ export default function FamilyDirectoryPage() {
       })
     : [];
 
-  const grouped = filteredFamilies.reduce((acc, f) => {
-    const key = `${f.info.currentCity} (${f.info.nativeCity})`;
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(f);
-    return acc;
-  }, {});
+const grouped = filteredFamilies.reduce((acc, f) => {
+  const key = noFilterApplied
+    ? `#${f.familyId}`                       // GROUP BY FAMILY ID
+    : `${f.info.currentCity} (${f.info.nativeCity})`; // EXISTING BEHAVIOR
+
+  if (!acc[key]) acc[key] = [];
+  acc[key].push(f);
+  return acc;
+}, {});
 
   return (
     <div className="p-4 max-w-3xl mx-auto">
@@ -197,9 +216,45 @@ export default function FamilyDirectoryPage() {
                   <FaPhone />
                 </a>
 
-                <span className="flex-1 text-center">
-                  {renderName(m.name)}
-                </span>
+                <span
+  className={`flex-1 text-left ml-2 select-none
+    ${
+      m.gender === "Male"
+        ? "text-blue-700"
+        : m.gender === "Female"
+        ? "text-pink-600"
+        : "text-gray-600"
+    }
+    ${
+      m.maritalStatus === "Married"
+        ? "font-semibold"
+        : m.maritalStatus?.toLowerCase().includes("widow")
+        ? "italic"
+        : "font-normal"
+    }
+  `}
+  onTouchStart={() => {
+    const timer = setTimeout(() => showMemberInfo(m), 500);
+    setPressTimer(timer);
+  }}
+  onTouchEnd={() => {
+    if (pressTimer) clearTimeout(pressTimer);
+  }}
+  onMouseDown={() => {
+    const timer = setTimeout(() => showMemberInfo(m), 600);
+    setPressTimer(timer);
+  }}
+  onMouseUp={() => {
+    if (pressTimer) clearTimeout(pressTimer);
+  }}
+  onContextMenu={(e) => {
+    e.preventDefault();
+    showMemberInfo(m);
+  }}
+>
+  {renderName(m.name)}
+</span>
+
 
                 <a
                   href={`https://wa.me/91${m.mobile}`}
@@ -218,74 +273,189 @@ export default function FamilyDirectoryPage() {
       {!searchMode &&
         Object.entries(grouped).map(([group, famList]) => (
           <div key={group} className="mb-5">
-            <h2 className="font-bold text-lg mb-2">{group}</h2>
-
+           {/* <h2 className="font-bold text-lg mb-2">{group}   </h2>*/}
+            {console.log("fam",[famList.familyId]) }
             {famList.map((family) => {
               const { primary, extra } = splitMembers(family.members);
 
               return (
                 <div key={family.familyId} className="bg-white border rounded p-3 mb-3">
+                <div className="mb-3 text-sm font-semibold text-gray-800 border-b pb-2">
+  <span className="bg-gray-100 px-2 py-1 rounded mr-2">
+    #{family.familyId}
+  </span>
+  <span>
+    {family.info.currentCity}
+    <span className="text-gray-500 font-normal">
+      {" "}({family.info.nativeCity})
+    </span>
+  </span>
+</div>
 
+                
+                
                   {/* COLLAPSED */}
                   {primary.map((m) => (
-                    <div key={m.id} className="flex justify-between items-center mb-2">
-                      <a href={`tel:${m.mobile}`} className="text-blue-600 text-xl">
-                        <FaPhone />
-                      </a>
+  <div
+    key={m.id}
+    className={`flex justify-between items-center mb-2 p-2 
+      ${ m.gender === "Male"
+        ? "text-blue-700"
+        : m.gender === "Female"
+        ? "text-pink-600"
+        : "text-gray-600"
+      }`}
+  >
+    {/* CALL */}
+    <a href={`tel:${m.mobile}`} className="text-blue-600 text-xl">
+      <FaPhone />
+    </a>
 
-                      <span className="flex-1 text-center font-medium">
-                        {renderName(m.name)}
-                      </span>
+    {/* NAME */}
+    <span
+  className={`flex-1 text-left ml-2 select-none
+    ${
+      m.gender === "Male"
+        ? "text-blue-700"
+        : m.gender === "Female"
+        ? "text-pink-600"
+        : "text-gray-600"
+    }
+    ${
+      m.maritalStatus === "Married"
+        ? "font-semibold"
+        : m.maritalStatus?.toLowerCase().includes("widow")
+        ? "italic"
+        : "font-normal"
+    }
+  `}
+  onTouchStart={() => {
+    const timer = setTimeout(() => showMemberInfo(m), 500);
+    setPressTimer(timer);
+  }}
+  onTouchEnd={() => {
+    if (pressTimer) clearTimeout(pressTimer);
+  }}
+  onMouseDown={() => {
+    const timer = setTimeout(() => showMemberInfo(m), 600);
+    setPressTimer(timer);
+  }}
+  onMouseUp={() => {
+    if (pressTimer) clearTimeout(pressTimer);
+  }}
+  onContextMenu={(e) => {
+    e.preventDefault();
+    showMemberInfo(m);
+  }}
+>
+  {renderName(m.name)}
+</span>
 
-                      <div className="flex gap-3 items-center">
-                        <a
-                          href={`https://wa.me/91${m.mobile}`}
-                          className="text-green-600 text-xl"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <FaWhatsapp />
-                        </a>
 
-                        {extra.length > 0 && (
-                          <button
-                            onClick={() =>
-                              setExpanded((prev) => ({
-                                ...prev,
-                                [family.familyId]: !prev[family.familyId],
-                              }))
-                            }
-                            className="text-xl"
-                          >
-                            {expanded[family.familyId] ? <FaChevronUp /> : <FaChevronDown />}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+    {/* ACTIONS */}
+    <div className="flex gap-3 items-center">
+      <a
+        href={`https://wa.me/91${m.mobile}`}
+        className="text-green-600 text-xl"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <FaWhatsapp />
+      </a>
+
+     
+
+      {/* EXPAND / COLLAPSE (UNCHANGED) */}
+      {extra.length > 0 && (
+        <button
+          onClick={() =>
+            setExpanded((prev) => ({
+              ...prev,
+              [family.familyId]: !prev[family.familyId],
+            }))
+          }
+          className="text-xl"
+        >
+          {expanded[family.familyId] ? <FaChevronUp /> : <FaChevronDown />}
+        </button>
+      )}
+    </div>
+  </div>
+))}
+
 
                   {/* EXPANDED */}
                   {expanded[family.familyId] &&
-                    extra.map((m) => (
-                      <div key={m.id} className="flex justify-between items-center mb-2">
-                        <a href={`tel:${m.mobile}`} className="text-blue-600 text-xl">
-                          <FaPhone />
-                        </a>
+  extra.map((m) => (
+    <div
+      key={m.id}
+      className={`flex justify-between items-center mb-2 p-2 
+        ${ m.gender === "Male"
+        ? "text-blue-700"
+        : m.gender === "Female"
+        ? "text-pink-600"
+        : "text-gray-600"
+        }`}
+    >
+      <a href={`tel:${m.mobile}`} className="text-blue-600 text-xl">
+        <FaPhone />
+      </a>
+<span
+  className={`flex-1 text-left ml-1 select-none
+    ${
+      m.gender === "Male"
+        ? "text-blue-700"
+        : m.gender === "Female"
+        ? "text-pink-600"
+        : "text-gray-600"
+    }
+    ${
+      m.maritalStatus === "Married"
+        ? "font-semibold"
+        : m.maritalStatus?.toLowerCase().includes("widow")
+        ? "italic"
+        : "font-normal"
+    }
+  `}
+  onTouchStart={() => {
+    const timer = setTimeout(() => showMemberInfo(m), 500);
+    setPressTimer(timer);
+  }}
+  onTouchEnd={() => {
+    if (pressTimer) clearTimeout(pressTimer);
+  }}
+  onMouseDown={() => {
+    const timer = setTimeout(() => showMemberInfo(m), 600);
+    setPressTimer(timer);
+  }}
+  onMouseUp={() => {
+    if (pressTimer) clearTimeout(pressTimer);
+  }}
+  onContextMenu={(e) => {
+    e.preventDefault();
+    showMemberInfo(m);
+  }}
+>
+  {renderName(m.name)}
+</span>
 
-                        <span className="flex-1 text-center">
-                          {renderName(m.name)}
-                        </span>
 
-                        <a
-                          href={`https://wa.me/91${m.mobile}`}
-                          className="text-green-600 text-xl"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <FaWhatsapp />
-                        </a>
-                      </div>
-                    ))}
+
+      <div className="flex gap-3 items-center">
+        <a
+          href={`https://wa.me/91${m.mobile}`}
+          className="text-green-600 text-xl"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <FaWhatsapp />
+        </a>
+
+       
+      </div>
+    </div>
+  ))}
+
                 </div>
               );
             })}
