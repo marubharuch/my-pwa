@@ -1,49 +1,62 @@
 // hooks/useFamilies.js
 import { useEffect, useState } from "react";
 import localforage from "localforage";
-import { fetchAllFamilies } from "../services/familyService";
+import { fetchUpdatedFamilies } from "../services/familyService";
+
+const LOCAL_KEY = "familiesCache";
+const LAST_SYNC_KEY = "familiesLastSync";
 
 export function useFamilies() {
   const [families, setFamilies] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
 
-  const LOCAL_KEY = "familiesCache";
-
-  // Convert object → array
   const mapObjectToArray = (obj) =>
     Object.entries(obj || {}).map(([id, data]) => ({
       familyId: id,
       ...data,
     }));
 
-  // Load from local first (fast UI)
-  async function loadFromLocal() {
-    const cached = await localforage.getItem(LOCAL_KEY);
-    if (cached) {
-      setFamilies(mapObjectToArray(cached));
+  async function sync(force = false) {
+    try {
+      setSyncing(true);
+
+      const local = (await localforage.getItem(LOCAL_KEY)) || {};
+      const lastSync = force
+        ? 0
+        : (await localforage.getItem(LAST_SYNC_KEY)) || 0;
+
+      if (Object.keys(local).length) {
+        setFamilies(mapObjectToArray(local));
+      }
+
+      const updates = await fetchUpdatedFamilies(lastSync);
+
+      if (Object.keys(updates).length) {
+        const merged = force ? updates : { ...local, ...updates };
+
+        await localforage.setItem(LOCAL_KEY, merged);
+        await localforage.setItem(LAST_SYNC_KEY, Date.now());
+
+        setFamilies(mapObjectToArray(merged));
+      }
+    } catch (e) {
+      console.error("Family sync failed", e);
+    } finally {
+      setLoading(false);
+      setSyncing(false);
     }
   }
 
-  // Load from Firebase
-  async function loadFromFirebase() {
-    const data = await fetchAllFamilies();
-
-    // Save to state
-    const familyArray = mapObjectToArray(data);
-    setFamilies(familyArray);
-
-    // Store in localForage
-    await localforage.setItem(LOCAL_KEY, data);
-
-    setLoading(false);
-  }
-
   useEffect(() => {
-    (async () => {
-      await loadFromLocal();   // immediate UI
-      await loadFromFirebase(); // then sync online
-    })();
+    sync(false); // automatic incremental sync
   }, []);
 
-  return { families, loading };
+  return {
+    families,
+    loading,
+    syncing,
+    refresh: () => sync(false),   // incremental refresh
+    forceRefresh: () => sync(true) // full refresh (rare)
+  };
 }

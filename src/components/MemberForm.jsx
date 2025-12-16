@@ -1,76 +1,174 @@
 // src/components/MemberForm.jsx
-
-/**
- * 👤 MEMBER FORM – ADD / EDIT (FROZEN)
- *
- * CONTRACT (DO NOT BREAK):
- * ------------------------------------------------
- * - Parent controls DB writes
- * - onSave(data, id) is REQUIRED
- * - id === null  → add new member
- * - id !== null  → edit existing member
- *
- * RULES:
- * ------------------------------------------------
- * ❌ This component MUST NOT talk to Firebase
- * ❌ This component MUST NOT generate member IDs
- * ✅ Always send normalized member data
- */
-
 import React, { useState, useEffect } from "react";
 
 export default function MemberForm({ open, onClose, initial = null, onSave }) {
+  /* ---------------- STATE ---------------- */
   const [name, setName] = useState("");
+  const [countryCode, setCountryCode] = useState("91"); // default India
   const [mobile, setMobile] = useState("");
+
   const [gender, setGender] = useState("");
-  const [relationship, setRelationship] = useState("");
+  const [maritalStatus, setMaritalStatus] = useState("");
+
+  const [birthdate, setBirthdate] = useState(""); // DD-MM-YYYY
+  const [occupation, setOccupation] = useState("");
+
+  const [education, setEducation] = useState("");
+
+  const [piyarDetails, setPiyarDetails] = useState("");
+  const [stayAway, setStayAway] = useState(false);
+  const [stayCity, setStayCity] = useState("");
+
   const [loading, setLoading] = useState(false);
 
-  /* ---------------- PREFILL FOR EDIT ---------------- */
+  /* ---------------- PREFILL ---------------- */
   useEffect(() => {
     if (initial) {
       setName(initial.name || "");
-      setMobile(initial.mobile || "");
+
+      if (initial.mobile && initial.mobile.length > 10) {
+        setCountryCode(initial.mobile.slice(0, initial.mobile.length - 10));
+        setMobile(initial.mobile.slice(-10));
+      } else {
+        setCountryCode("91");
+        setMobile(initial.mobile || "");
+      }
+
       setGender(initial.gender || "");
-      setRelationship(initial.relationship || "");
+      setMaritalStatus(initial.maritalStatus || "");
+      setBirthdate(initial.birthdate || "");
+      setEducation(initial.education || "");
+      setPiyarDetails(initial.piyarDetails || "");
+      setStayAway(!!initial.stayAway);
+      setStayCity(initial.stayCity || "");
     } else {
       setName("");
+      setCountryCode("91");
       setMobile("");
       setGender("");
-      setRelationship("");
+      setMaritalStatus("");
+      setBirthdate("");
+      setEducation("");
+      setPiyarDetails("");
+      setStayAway(false);
+      setStayCity("");
     }
   }, [initial, open]);
 
   if (!open) return null;
 
+  /* ---------------- HELPERS ---------------- */
+const formatBirthdate = (value) => {
+  // allow digits and dash only
+  let v = value.replace(/[^\d-]/g, "").slice(0, 10);
+
+  // handle cases like "1-" → "01-"
+  if (/^\d-$/.test(v)) {
+    v = "0" + v;
+  }
+
+  // split by dash
+  const parts = v.split("-");
+
+  // DAY
+  if (parts[0].length === 2 && parts.length === 1) {
+    v = parts[0] + "-";
+  }
+
+  // MONTH
+  if (parts.length === 2 && parts[1].length === 2) {
+    v = parts[0] + "-" + parts[1] + "-";
+  }
+
+  return v;
+};
+
+
+const getAge = (birthdate) => {
+  if (!/^\d{2}-\d{2}-\d{4}$/.test(birthdate)) return null;
+
+  const [d, m, y] = birthdate.split("-").map(Number);
+  const dob = new Date(y, m - 1, d);
+  const diff = Date.now() - dob.getTime();
+  return Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25));
+};
+
+  const validBirthdate = (val) => {
+    if (!val) return true;
+    if (!/^\d{2}-\d{2}-\d{4}$/.test(val)) return false;
+    const [dd, mm, yyyy] = val.split("-").map(Number);
+    const now = new Date().getFullYear();
+    return dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12 && yyyy >= 1900 && yyyy <= now;
+  };
+
+  const validCountryCode = (cc) => /^\d{1,3}$/.test(cc);
+  const validMobileNumber = (num) => /^\d{6,12}$/.test(num);
+
+  const validMobile = () => {
+    if (!mobile) return true;
+    return validCountryCode(countryCode) && validMobileNumber(mobile);
+  };
+
   /* ---------------- SAVE ---------------- */
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    const cleanName = name.trim();
-    if (!cleanName) {
+    if (!name.trim()) {
       alert("Name is required");
+      return;
+    }
+
+    if (!validBirthdate(birthdate)) {
+      alert("Birthdate must be DD-MM-YYYY");
+      return;
+    }
+
+    if (!validMobile()) {
+      alert("Enter valid country code and mobile number");
       return;
     }
 
     setLoading(true);
 
     try {
+      const fullMobile = mobile ? `${countryCode}${mobile}` : "";
+
       await onSave(
-        {
-          name: cleanName,
-          mobile: mobile.trim() || "",
-          gender: gender || "",
-          relationship: relationship.trim() || "",
-          active: true,                 // ✅ always explicit
-        },
-        initial ? initial.id : null
-      );
+  {
+    name: name.trim(),
+    mobile: fullMobile,
+    gender,
+    maritalStatus,
+    birthdate,
+    education: education.trim(),
+
+    occupation:
+      (() => {
+        const age = getAge(birthdate);
+        return age && age >= 18 && age <= 65 ? occupation : "";
+      })(),
+
+    piyarDetails:
+      gender === "Female" &&
+      ["Married", "Divorced", "Widow"].includes(maritalStatus)
+        ? piyarDetails.trim()
+        : "",
+
+    stayAway: maritalStatus === "Unmarried" ? stayAway : false,
+    stayCity:
+      maritalStatus === "Unmarried" && stayAway
+        ? stayCity.trim()
+        : "",
+
+    active: true,
+  },
+  initial ? initial.id : null
+);
+
 
       onClose();
-    } catch (err) {
-      console.error("Member save error:", err);
-      alert("Could not save member. Try again.");
+    } catch {
+      alert("Save failed");
     } finally {
       setLoading(false);
     }
@@ -78,67 +176,185 @@ export default function MemberForm({ open, onClose, initial = null, onSave }) {
 
   /* ---------------- UI ---------------- */
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/40"
-        onClick={onClose}
-      />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
 
       <form
         onSubmit={handleSubmit}
-        className="relative bg-white rounded-lg p-4 w-full max-w-md z-10 shadow-lg"
+        className="relative bg-white rounded-lg p-4 w-full max-w-md z-10 space-y-2"
       >
-        <h3 className="text-lg font-bold mb-3">
+        <h3 className="font-bold text-lg">
           {initial ? "Edit Member" : "Add Member"}
         </h3>
 
-        <label className="text-sm">Name</label>
         <input
+          placeholder="Name *"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          required
-          className="w-full border px-3 py-2 rounded mb-3"
+          className="w-full border p-2 rounded"
         />
 
-        <label className="text-sm">Mobile</label>
-        <input
-          value={mobile}
-          onChange={(e) => setMobile(e.target.value)}
-          className="w-full border px-3 py-2 rounded mb-3"
-        />
-
-        <label className="text-sm">Gender</label>
-        <select
-          value={gender}
-          onChange={(e) => setGender(e.target.value)}
-          className="w-full border px-3 py-2 rounded mb-3"
-        >
-          <option value="">Select</option>
-          <option value="Male">Male</option>
-          <option value="Female">Female</option>
-          <option value="Other">Other</option>
-        </select>
-
-        <label className="text-sm">Relationship</label>
-        <input
-          value={relationship}
-          onChange={(e) => setRelationship(e.target.value)}
-          className="w-full border px-3 py-2 rounded mb-4"
-        />
-
+        <label className="text-sm text-gray-600">Mobile Number</label>
         <div className="flex gap-2">
+          <input
+            placeholder="91"
+            value={countryCode}
+            inputMode="numeric"
+            onChange={(e) =>
+              setCountryCode(e.target.value.replace(/\D/g, "").slice(0, 3))
+            }
+            className="border p-2 rounded w-20"
+          />
+          <input
+            placeholder="Mobile number"
+            value={mobile}
+            inputMode="numeric"
+            onChange={(e) =>
+              setMobile(e.target.value.replace(/\D/g, "").slice(0, 12))
+            }
+            className="flex-1 border p-2 rounded"
+          />
+        </div>
+
+        <p className="text-xs text-gray-500">
+          Country code + mobile number (digits only)
+        </p>
+
+        {/* GENDER */}
+        <div className="flex gap-2">
+  {/* GENDER */}
+  <button
+    type="button"
+    className={`w-12 p-2 border rounded text-center ${
+      gender === "Male" ? "bg-blue-100" : ""
+    }`}
+    onClick={() => setGender("Male")}
+  >
+    M
+  </button>
+
+  <button
+    type="button"
+    className={`w-12 p-2 border rounded text-center ${
+      gender === "Female" ? "bg-pink-100" : ""
+    }`}
+    onClick={() => setGender("Female")}
+  >
+    F
+  </button>
+
+  {/* MARITAL STATUS */}
+  <select
+    value={maritalStatus}
+    onChange={(e) => setMaritalStatus(e.target.value)}
+    className="flex-1 border p-2 rounded"
+  >
+    <option value="">Marital Status</option>
+
+    {gender === "Male" && (
+      <>
+        <option>Unmarried</option>
+        <option>Married</option>
+        <option>Divorced</option>
+        <option>Widower</option>
+      </>
+    )}
+
+    {gender === "Female" && (
+      <>
+        <option>Unmarried</option>
+        <option>Married</option>
+        <option>Divorced</option>
+        <option>Widow</option>
+      </>
+    )}
+  </select>
+</div>
+
+
+        {/* BIRTHDATE */}
+        <input
+          placeholder="Birthdate (DD-MM-YYYY)"
+          value={birthdate}
+          inputMode="numeric"
+          maxLength={10}
+          onChange={(e) => setBirthdate(formatBirthdate(e.target.value))}
+          className="w-full border p-2 rounded"
+        />
+
+        <input
+          placeholder="Education"
+          value={education}
+          onChange={(e) => setEducation(e.target.value)}
+          className="w-full border p-2 rounded"
+        />
+        {(() => {
+  const age = getAge(birthdate);
+  if (age && age >= 18 && age <= 65) {
+    return (
+      <select
+        value={occupation}
+        onChange={(e) => setOccupation(e.target.value)}
+        className="w-full border p-2 rounded"
+      >
+        <option value="">Occupation</option>
+        <option>Student</option>
+        <option>Service</option>
+        <option>Business</option>
+        <option>Other</option>
+      </select>
+    );
+  }
+  return null;
+})()}
+
+
+        {/* PIYAR */}
+        {gender === "Female" &&
+          ["Married", "Widow"].includes(maritalStatus) && (
+            <textarea
+              placeholder="Piyar / Mayaka details"
+              value={piyarDetails}
+              onChange={(e) => setPiyarDetails(e.target.value)}
+              className="w-full border p-2 rounded"
+            />
+          )}
+
+        {/* UNMARRIED */}
+        {maritalStatus === "Unmarried" && (
+          <>
+            <label className="text-sm">
+              Stay away from home?
+              <input
+                type="checkbox"
+                checked={stayAway}
+                onChange={(e) => setStayAway(e.target.checked)}
+                className="ml-2"
+              />
+            </label>
+
+            {stayAway && (
+              <input
+                placeholder="Current stay city"
+                value={stayCity}
+                onChange={(e) => setStayCity(e.target.value)}
+                className="w-full border p-2 rounded"
+              />
+            )}
+          </>
+        )}
+
+        <div className="flex gap-2 pt-2">
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 py-2 border rounded"
+            className="flex-1 border p-2 rounded"
           >
             Cancel
           </button>
-
           <button
-            type="submit"
             disabled={loading}
-            className="flex-1 py-2 bg-blue-600 text-white rounded"
+            className="flex-1 bg-blue-600 text-white p-2 rounded"
           >
             {loading ? "Saving..." : "Save"}
           </button>

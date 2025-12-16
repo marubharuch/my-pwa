@@ -1,40 +1,33 @@
 // src/pages/FamilyDetailPage.jsx
 
 /**
- * 👨‍👩‍👧‍👦 FAMILY DETAIL PAGE – MEMBER-SEPARATED (FROZEN)
+ * 👨‍👩‍👧‍👦 FAMILY DETAIL PAGE – FINAL STRUCTURE (FROZEN)
  *
- * ✅ ARCHITECTURE (DO NOT BREAK):
+ * DATA MODEL (DO NOT BREAK):
  * ------------------------------------------------
- * 1️⃣ Family META → /families/{srno}
- *    - city, native, editorEmails, createdBy
+ * families/{familyId}
+ *  ├─ info
+ *  │   ├─ currentCity
+ *  │   ├─ nativeCity
+ *  │   └─ editorEmails
+ *  ├─ members/{memberId = timestamp}
+ *  ├─ pendingRequests
+ *  └─ meta
  *
- * 2️⃣ Members → /familyMembers/{srno}/{memberId}
- *    - name, mobile, active, updatedAt
- *
- * 3️⃣ User profile → AuthContext.userRecord
- *    ❌ NEVER read /users/{uid} here
- *
- * ✅ WHY THIS EXISTS:
- * ------------------------------------------------
- * - Prevent downloading entire family when 1 member changes
- * - Enable timestamp-based sync & localForage caching
- *
- * ❗ RULES FOR FUTURE EDITS:
- * ------------------------------------------------
- * ❌ DO NOT put members back inside /families
- * ❌ DO NOT re-fetch family after every edit
- * ✅ Update local state after writes
+ * ❌ DO NOT use /familyMembers
+ * ❌ DO NOT read /users here
  */
 
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase";
-import { ref, get, set, update, remove, push } from "firebase/database";
+import { ref, get, set, update, remove } from "firebase/database";
 import MemberForm from "../components/MemberForm";
 
 export default function FamilyDetailPage() {
-  const { srno } = useParams();
+  const { srno: familyId } = useParams();
+
   const navigate = useNavigate();
   const { user, userRecord, loading: authLoading } = useAuth();
   const uid = user?.uid;
@@ -48,25 +41,28 @@ export default function FamilyDetailPage() {
   const [editMember, setEditMember] = useState(null);
   const [processingUid, setProcessingUid] = useState(null);
 
-  /* ---------------- LOAD FAMILY META ---------------- */
+  /* ---------------- LOAD FAMILY ---------------- */
   useEffect(() => {
     async function loadFamily() {
-      const snap = await get(ref(db, `families/${srno}`));
-      if (snap.exists()) setFamily(snap.val());
+      const snap = await get(ref(db, `families/${familyId}`));
+      if (snap.exists()) {
+        setFamily(snap.val());
+      }
       setLoading(false);
     }
     loadFamily();
-  }, [srno]);
+  }, [familyId]);
 
-  /* ---------------- LOAD MEMBERS (SEPARATE NODE) ---------------- */
+  /* ---------------- LOAD MEMBERS ---------------- */
   useEffect(() => {
     async function loadMembers() {
-      const snap = await get(ref(db, `familyMembers/${srno}`));
-      if (snap.exists()) setMembers(snap.val());
-      else setMembers({});
+      const snap = await get(
+        ref(db, `families/${familyId}/members`)
+      );
+      setMembers(snap.exists() ? snap.val() : {});
     }
     loadMembers();
-  }, [srno]);
+  }, [familyId]);
 
   /* ---------------- PERMISSION ---------------- */
   const isEditor =
@@ -74,23 +70,32 @@ export default function FamilyDetailPage() {
     !!family &&
     (
       userRecord.role === "admin" ||
-      family.createdBy === uid ||
-      family.editorEmails?.[uid] === true
+      family.meta?.createdBy === uid ||
+      family.info?.editorEmails?.[uid] === true
     );
 
   /* ---------------- EDIT CITY / NATIVE ---------------- */
   const editField = async (field, label) => {
     if (!isEditor) return;
 
-    const value = window.prompt(`Edit ${label}`, family[field] || "");
-    if (value === null || value.trim() === family[field]) return;
+    const value = window.prompt(
+      `Edit ${label}`,
+      family.info?.[field] || ""
+    );
+    if (value === null) return;
 
-    await update(ref(db, `families/${srno}`), {
+    await update(ref(db, `families/${familyId}/info`), {
       [field]: value.trim(),
+    });
+
+    await update(ref(db, `families/${familyId}/meta`), {
       updatedAt: Date.now(),
     });
 
-    setFamily((f) => ({ ...f, [field]: value.trim() }));
+    setFamily((f) => ({
+      ...f,
+      info: { ...f.info, [field]: value.trim() },
+    }));
   };
 
   /* ---------------- LOAD PENDING REQUESTS ---------------- */
@@ -109,36 +114,42 @@ export default function FamilyDetailPage() {
     try {
       setProcessingUid(pid);
 
-      // ✅ Editor access
-      await set(ref(db, `families/${srno}/editorEmails/${pid}`), true);
+      await set(
+        ref(db, `families/${familyId}/info/editorEmails/${pid}`),
+        true
+      );
 
-      // ✅ Update user profile
       await update(ref(db, `users/${pid}`), {
-        familySrno: srno,
+        familyId,
         role: "member",
       });
 
-      // ✅ Remove pending
-      await remove(ref(db, `families/${srno}/pendingRequests/${pid}`));
-      await remove(ref(db, `users/${pid}/pendingJoin`));
+      await remove(
+        ref(db, `families/${familyId}/pendingRequests/${pid}`)
+      );
 
-      // ✅ Ask optional member creation
       const add = window.confirm(
         `Add ${name} as family member?\n\nOK = Yes\nCancel = Editor only`
       );
 
       if (add) {
-        const memberId = pid; // ✅ stable ID for joined users
-        await set(ref(db, `familyMembers/${srno}/${memberId}`), {
-          name,
-          active: true,
-          addedViaJoin: true,
-          updatedAt: Date.now(),
-        });
+        const memberId = Date.now();
+        await set(
+          ref(db, `families/${familyId}/members/${memberId}`),
+          {
+            id: memberId,
+            name,
+            active: true,
+            addedViaJoin: true,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          }
+        );
 
         setMembers((m) => ({
           ...m,
           [memberId]: {
+            id: memberId,
             name,
             active: true,
             addedViaJoin: true,
@@ -146,13 +157,11 @@ export default function FamilyDetailPage() {
         }));
       }
 
-      // ✅ Update local pending list
       setFamily((f) => {
         const p = { ...(f.pendingRequests || {}) };
         delete p[pid];
         return { ...f, pendingRequests: p };
       });
-
     } finally {
       setProcessingUid(null);
     }
@@ -162,8 +171,9 @@ export default function FamilyDetailPage() {
   const confirmReject = async (pid, name) => {
     if (!window.confirm(`Reject join request for ${name}?`)) return;
 
-    await remove(ref(db, `families/${srno}/pendingRequests/${pid}`));
-    await remove(ref(db, `users/${pid}/pendingJoin`));
+    await remove(
+      ref(db, `families/${familyId}/pendingRequests/${pid}`)
+    );
 
     setFamily((f) => {
       const p = { ...(f.pendingRequests || {}) };
@@ -174,17 +184,23 @@ export default function FamilyDetailPage() {
 
   /* ---------------- LEAVE FAMILY ---------------- */
   const leaveFamily = async () => {
-    if (!userRecord || userRecord.familySrno !== srno) return;
+    if (!userRecord || userRecord.familyId !== familyId) return;
     if (!window.confirm("Leave this family? You will be hidden.")) return;
 
-    await update(ref(db, `familyMembers/${srno}/${uid}`), {
-      active: false,
-      leftAt: Date.now(),
-    });
+    await update(
+      ref(db, `families/${familyId}/members/${uid}`),
+      {
+        active: false,
+        leftAt: Date.now(),
+      }
+    );
 
-    await remove(ref(db, `families/${srno}/editorEmails/${uid}`));
+    await remove(
+      ref(db, `families/${familyId}/info/editorEmails/${uid}`)
+    );
+
     await update(ref(db, `users/${uid}`), {
-      familySrno: null,
+      familyId: null,
       role: userRecord.role === "admin" ? "admin" : "guest",
     });
 
@@ -193,23 +209,41 @@ export default function FamilyDetailPage() {
 
   /* ---------------- ADD / EDIT MEMBER ---------------- */
   const handleSaveMember = async (data, id = null) => {
-    const memberId = id || push(ref(db)).key;
+  const memberId = id || Date.now();
+  const now = Date.now();
 
-    await update(ref(db, `familyMembers/${srno}/${memberId}`), {
+  // 1️⃣ Save / update member
+  await update(
+    ref(db, `families/${familyId}/members/${memberId}`),
+    {
       ...data,
+      id: memberId,
       active: data.active !== false,
-      updatedAt: Date.now(),
-    });
+      updatedAt: now,
+    }
+  );
 
-    setMembers((m) => ({
-      ...m,
-      [memberId]: {
-        ...(m[memberId] || {}),
-        ...data,
-        active: data.active !== false,
-      },
-    }));
-  };
+  // 2️⃣ 🔥 CRITICAL: update family meta
+  await update(
+    ref(db, `families/${familyId}/meta`),
+    {
+      updatedAt: now,           // directory + cache trigger
+      membersUpdatedAt: now,    // optional but recommended
+    }
+  );
+
+  // 3️⃣ Update local state
+  setMembers((m) => ({
+    ...m,
+    [memberId]: {
+      ...(m[memberId] || {}),
+      ...data,
+      id: memberId,
+      active: data.active !== false,
+    },
+  }));
+};
+
 
   /* ---------------- UI STATES ---------------- */
   if (loading || authLoading) return <div className="p-4">Loading…</div>;
@@ -222,28 +256,72 @@ export default function FamilyDetailPage() {
 
   return (
     <div className="p-4 max-w-md mx-auto">
-
-      <h2 className="text-xl font-bold mb-4">Family #{srno}</h2>
+      <h2 className="text-xl font-bold mb-4">
+        Family #{familyId}
+      </h2>
 
       {/* CITY / NATIVE */}
-      <div className="bg-white p-3 rounded shadow mb-4 space-y-2">
-        <div className="flex justify-between">
-          <span>Current City: <b>{family.currentCity || "-"}</b></span>
-          {isEditor && <button onClick={() => editField("currentCity","Current City")}>✏️</button>}
-        </div>
-        <div className="flex justify-between">
-          <span>Native City: <b>{family.nativeCity || "-"}</b></span>
-          {isEditor && <button onClick={() => editField("nativeCity","Native City")}>✏️</button>}
-        </div>
-      </div>
+      {/* CITY / NATIVE */}
+<div className="bg-white p-3 rounded shadow mb-4 space-y-2">
+  <div className="flex justify-between">
+    <span>
+      Current City: <b>{family.info?.currentCity || "-"}</b>
+    </span>
+    {isEditor && (
+      <button onClick={() => editField("currentCity", "Current City")}>
+        ✏️
+      </button>
+    )}
+  </div>
+
+  <div className="flex justify-between">
+    <span>
+      Native City: <b>{family.info?.nativeCity || "-"}</b>
+    </span>
+    {isEditor && (
+      <button onClick={() => editField("nativeCity", "Native City")}>
+        ✏️
+      </button>
+    )}
+  </div>
+
+  {/* ADDRESS */}
+  <div className="flex justify-between items-start">
+    <span className="flex-1">
+      Address:
+      <br />
+      <b className="text-sm">
+        {family.info?.address || "—"}
+      </b>
+    </span>
+
+    {isEditor && (
+      <button
+        onClick={() => editField("address", "Address")}
+        className="ml-2 text-blue-600"
+        title="Edit Address"
+      >
+        ✏️
+      </button>
+    )}
+  </div>
+</div>
+
 
       {/* MEMBERS */}
       <h3 className="font-bold mb-2">Members</h3>
       {visibleMembers.map(([id, m]) => (
-        <div key={id} className="bg-white p-3 rounded shadow mb-2 flex justify-between">
+        <div
+          key={id}
+          className="bg-white p-3 rounded shadow mb-2 flex justify-between"
+        >
           <div>
             <b>{m.name}</b>
-            {m.active === false && <span className="text-xs text-gray-400 ml-2">Hidden</span>}
+            {m.active === false && (
+              <span className="text-xs text-gray-400 ml-2">
+                Hidden
+              </span>
+            )}
           </div>
 
           {isEditor && (
@@ -260,7 +338,6 @@ export default function FamilyDetailPage() {
         </div>
       ))}
 
-      {/* ADD MEMBER */}
       {isEditor && (
         <button
           className="mt-4 w-full bg-green-600 text-white py-2 rounded"
@@ -273,8 +350,7 @@ export default function FamilyDetailPage() {
         </button>
       )}
 
-      {/* LEAVE FAMILY */}
-      {userRecord?.familySrno === srno && (
+      {userRecord?.familyId === familyId && (
         <button
           onClick={leaveFamily}
           className="mt-6 w-full bg-red-500 text-white py-2 rounded"

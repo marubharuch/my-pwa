@@ -1,104 +1,108 @@
-// src/pages/CreateFamilyPage.jsx
-
-/**
- * 🏠 CREATE FAMILY PAGE
- *
- * IMPORTANT REMARKS (DO NOT REMOVE):
- * ------------------------------------------------
- * ✅ This page DOES NOT read RTDB directly anymore
- * ✅ User profile (role, familySrno) MUST come from AuthContext
- * ✅ This avoids repeated `/users/{uid}` reads across pages
- *
- * ACCESS RULES:
- * ------------------------------------------------
- * - Not logged in → redirect to /login
- * - Logged in but no profile yet → redirect to /register
- * - Non-admin + already in family → blocked
- * - Admin OR user without family → allowed
- *
- * ⚠️ When adding new features:
- *    Do NOT add direct `get(ref(db, users/...))` here.
- */
-
-import React, { useEffect } from "react";
+import React, { useState } from "react";
+import { db } from "../firebase";
+import { ref, runTransaction, set } from "firebase/database";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
-import FamilyEditForm from "../components/FamilyEditForm";
 
 export default function CreateFamilyPage() {
-  const { user, userRecord, loading } = useAuth();
+  const { user, updateUserRecordCache } = useAuth();
   const navigate = useNavigate();
 
-  /* ---------------- AUTH SAFETY ---------------- */
-  useEffect(() => {
-    if (!loading && !user) {
-      navigate("/login");
+  const [currentCity, setCurrentCity] = useState("");
+  const [nativeCity, setNativeCity] = useState("");
+  const [address, setAddress] = useState(""); // ✅ NEW
+  const [loading, setLoading] = useState(false);
+
+  const handleCreate = async () => {
+    if (!currentCity.trim()) {
+      alert("Current city is required");
+      return;
     }
-  }, [user, loading, navigate]);
 
-  /* ---------------- PROFILE NOT READY ---------------- */
-  useEffect(() => {
-    if (!loading && user && userRecord === null) {
-      navigate("/register");
+    if (!user) {
+      alert("Login required");
+      return;
     }
-  }, [loading, user, userRecord, navigate]);
 
-  if (loading) {
-    return (
-      <div className="p-4 max-w-md mx-auto">
-        <p>Loading your account…</p>
-      </div>
-    );
-  }
+    setLoading(true);
 
-  if (!userRecord) {
-    return null; // redirected
-  }
+    try {
+      let familyId;
+      const now = Date.now();
 
-  const isAdmin = userRecord.role === "admin";
-  const hasFamily = !!userRecord.familySrno;
+      /* 1️⃣ Generate family ID */
+      await runTransaction(ref(db, "master/nextFamilySrno"), (val) => {
+        familyId = String(val || 1);
+        return (val || 1) + 1;
+      });
 
-  /* ---------------- BLOCK NON-ADMIN ---------------- */
-  if (!isAdmin && hasFamily) {
-    return (
-      <div className="p-4 max-w-md mx-auto">
-        <h1 className="text-xl font-bold mb-4">Create Family</h1>
+      /* 2️⃣ Create family */
+      await set(ref(db, `families/${familyId}`), {
+        info: {
+          currentCity: currentCity.trim(),
+          nativeCity: nativeCity.trim(),
+          address: address.trim(), // ✅ STORED HERE
+          editorEmails: {
+            [user.uid]: true,
+          },
+        },
+        meta: {
+          createdBy: user.uid,
+          createdAt: now,
+          updatedAt: now,
+        },
+        members: {}, // intentionally empty
+      });
 
-        <p className="mb-4 text-sm text-gray-700">
-          You are already linked to <b>Family #{userRecord.familySrno}</b>.
-          A user can belong to only one family.
-        </p>
+      /* 3️⃣ Link user */
+      await set(ref(db, `users/${user.uid}/familyId`), familyId);
 
-        <button
-          onClick={() => navigate(`/family/${userRecord.familySrno}`)}
-          className="w-full bg-blue-600 text-white py-2 rounded mb-2"
-        >
-          Go to My Family
-        </button>
+      updateUserRecordCache({ familyId });
 
-        <p className="text-xs text-gray-500">
-          If this is incorrect, please contact an admin.
-        </p>
-      </div>
-    );
-  }
+      /* 4️⃣ Go to family page */
+      navigate(`/family/${familyId}`);
+    } catch (e) {
+      console.error(e);
+      alert("Family creation failed");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  /* ---------------- ALLOWED ---------------- */
   return (
-    <div className="p-4 max-w-md mx-auto">
-      <h1 className="text-xl font-bold mb-4">Create New Family</h1>
+    <div className="p-4 max-w-md mx-auto space-y-3">
+      <h1 className="text-xl font-bold">Create Family</h1>
 
-      {isAdmin ? (
-        <p className="text-xs text-gray-600 mb-3">
-          You are an <b>admin</b>. You may create multiple families.
-        </p>
-      ) : (
-        <p className="text-xs text-gray-600 mb-3">
-          After creating this family, your account will be linked to it.
-        </p>
-      )}
+      <input
+        placeholder="Current City *"
+        value={currentCity}
+        onChange={(e) => setCurrentCity(e.target.value)}
+        className="w-full border p-2 rounded"
+      />
 
-      <FamilyEditForm mode="create" />
+      <input
+        placeholder="Native City"
+        value={nativeCity}
+        onChange={(e) => setNativeCity(e.target.value)}
+        className="w-full border p-2 rounded"
+      />
+
+      {/* ✅ ADDRESS */}
+      <textarea
+        placeholder="Address (House no, society, area)"
+        value={address}
+        onChange={(e) => setAddress(e.target.value)}
+        className="w-full border p-2 rounded"
+        rows={3}
+      />
+
+      <button
+        onClick={handleCreate}
+        disabled={loading}
+        className="w-full bg-blue-600 text-white py-2 rounded"
+      >
+        {loading ? "Creating..." : "Create Family"}
+      </button>
     </div>
   );
 }

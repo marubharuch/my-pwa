@@ -4,44 +4,15 @@
  * This component implements MULTIPLE inter-dependent features:
  *
  * 1️⃣ Search Mode
- *    - When `search` has value:
- *      ✅ Full family cards are shown
- *      ✅ ALL members are displayed
- *      ✅ Matching member names are HIGHLIGHTED using <mark>
- *      ✅ Highlight uses `dangerouslySetInnerHTML`
- *
- * 2️⃣ Group / Filter Mode (No Search)
- *    - Families grouped by: currentCity + nativeCity
- *    - NO family name shown (by design)
- *    - Collapsed view shows ONLY primary members
- *    - Expanded view shows remaining members
- *
+ * 2️⃣ Group / Filter Mode
  * 3️⃣ Expand / Collapse Behaviour
- *    - Per-family expand state stored in `expanded`
- *    - Expand button MUST stay inline with phone + WhatsApp icons
- *    - Collapsed card height is intentionally minimal
- *
  * 4️⃣ UI / UX Constraints
- *    - Highlight must work in SEARCH MODE ONLY
- *    - Expand logic must NOT interfere with search results
- *    - Removing highlight or innerHTML will break search UX
  *
- * ❌ Do NOT:
- *    - Remove highlight() function
- *    - Replace dangerouslySetInnerHTML with plain text
- *    - Merge search mode and group mode logic
- *    - Move expand button outside member row
- *
- * ✅ Any refactor must preserve:
- *    search → full family → highlighted names
- *    no-search → grouped → compact cards → expand remaining members
+ * ❌ Do NOT refactor without understanding this file.
  */
 
-
-
-
-import React, { useEffect, useState } from "react";
-import { fetchAllFamilies } from "../services/familyService";
+import React, { useState } from "react";
+import { useFamilies } from "../hooks/useFamilies";
 import {
   FaWhatsapp,
   FaPhone,
@@ -50,43 +21,25 @@ import {
   FaHome,
   FaChevronDown,
   FaChevronUp,
+  FaSync,
 } from "react-icons/fa";
-import localforage from "localforage";
 
 export default function FamilyDirectoryPage() {
-  const [families, setFamilies] = useState([]);
+  /* ================= DATA ================= */
+  const { families, loading, syncing, refresh } = useFamilies();
+
+  /* ================= UI STATE ================= */
+  const [sortMode, setSortMode] = useState("srno");
+  const [infoPopup, setInfoPopup] = useState(null);
   const [currentCity, setCurrentCity] = useState("");
   const [nativeCity, setNativeCity] = useState("");
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState({});
-const [pressTimer, setPressTimer] = useState(null);
+  const [pressTimer, setPressTimer] = useState(null);
 
-  const LOCAL_KEY = "familiesCache";
   const PRIMARY_COUNT = 1;
 
-  
-
-
-
-  useEffect(() => {
-    async function load() {
-      const local = await localforage.getItem(LOCAL_KEY);
-      if (local) setFamilies(toArray(local));
-
-      const remote = await fetchAllFamilies();
-      await localforage.setItem(LOCAL_KEY, remote);
-      setFamilies(toArray(remote));
-    }
-    load();
-  }, []);
-
-  const toArray = (obj) =>
-    Object.entries(obj || {}).map(([id, f]) => ({
-      familyId: id,
-      ...f,
-    }));
-
-  /* ✅ NAME HIGHLIGHTER (GLOBAL) */
+  /* ================= NAME HIGHLIGHT ================= */
   const renderName = (name) => {
     if (!search) return name;
     const reg = new RegExp(`(${search})`, "gi");
@@ -98,24 +51,53 @@ const [pressTimer, setPressTimer] = useState(null);
       />
     );
   };
-  const showMemberInfo = (m) => {
-  alert(
-    `🎂 Birthdate: ${m.birthdate || "NA"}
-🎓 Education: ${m.education || "NA"}
-🏠 City: ${m.currentCity} (${m.nativeCity})`
+
+  /* ================= MEMBER INFO ================= */
+  const showMemberInfo = (m, event) => {
+    const rect = event?.target?.getBoundingClientRect();
+    setInfoPopup({
+      member: m,
+      x: rect ? rect.left + rect.width / 2 : window.innerWidth / 2,
+      y: rect ? rect.top : window.innerHeight - 120,
+    });
+  };
+
+  const attachLongPressHandlers = (m) => ({
+    onMouseDown: (e) => {
+      const t = setTimeout(() => showMemberInfo(m, e), 600);
+      setPressTimer(t);
+    },
+    onMouseUp: () => pressTimer && clearTimeout(pressTimer),
+    onTouchStart: (e) => {
+      const t = setTimeout(() => showMemberInfo(m, e), 500);
+      setPressTimer(t);
+    },
+    onTouchEnd: () => pressTimer && clearTimeout(pressTimer),
+    onContextMenu: (e) => {
+      e.preventDefault();
+      showMemberInfo(m, e);
+    },
+  });
+
+ const splitMembers = (membersObj) => {
+  const list = Object.entries(membersObj || {}).map(
+    ([key, m]) => ({
+      id: m.id || key,   // ✅ fallback to RTDB key
+      ...m,
+    })
   );
+
+  // ensure stable order
+  list.sort((a, b) => Number(a.id) - Number(b.id));
+
+  return {
+    primary: list.slice(0, PRIMARY_COUNT),
+    extra: list.slice(PRIMARY_COUNT),
+  };
 };
 
 
-  const splitMembers = (membersObj) => {
-    const list = Object.values(membersObj || {});
-    return {
-      primary: list.slice(0, PRIMARY_COUNT),
-      extra: list.slice(PRIMARY_COUNT),
-    };
-  };
-
-  /* SEARCH MODE */
+  /* ================= SEARCH ================= */
   const searchMode = search.trim().length > 0;
 
   const searchedFamilies = searchMode
@@ -126,9 +108,8 @@ const [pressTimer, setPressTimer] = useState(null);
       )
     : [];
 
-  /* GROUP MODE */
-  const noFilterApplied =
-  !searchMode && !currentCity && !nativeCity;
+  /* ================= FILTER + SORT ================= */
+  const noFilterApplied = !searchMode && !currentCity && !nativeCity;
 
   const filteredFamilies = !searchMode
     ? families.filter((f) => {
@@ -138,18 +119,76 @@ const [pressTimer, setPressTimer] = useState(null);
       })
     : [];
 
-const grouped = filteredFamilies.reduce((acc, f) => {
-  const key = noFilterApplied
-    ? `#${f.familyId}`                       // GROUP BY FAMILY ID
-    : `${f.info.currentCity} (${f.info.nativeCity})`; // EXISTING BEHAVIOR
+  const getPrimaryName = (family) => {
+    const members = Object.values(family.members || {});
+    return members.length ? members[0].name.toLowerCase() : "";
+  };
 
-  if (!acc[key]) acc[key] = [];
-  acc[key].push(f);
-  return acc;
-}, {});
+  const sortedFamilies = [...filteredFamilies].sort((a, b) => {
+    if (sortMode === "alpha") {
+      return getPrimaryName(a).localeCompare(getPrimaryName(b));
+    }
+    return Number(a.familyId) - Number(b.familyId);
+  });
 
+  const grouped = sortedFamilies.reduce((acc, f) => {
+    const key = noFilterApplied
+      ? `#${f.familyId}`
+      : `${f.info.currentCity} (${f.info.nativeCity})`;
+
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(f);
+    return acc;
+  }, {});
+
+  /* ================= LOADING ================= */
+  if (loading) {
+    return <div className="p-4 text-gray-500">Loading directory…</div>;
+  }
+
+
+
+const getMemberClass = (m) => {
+  let cls = "flex-1 select-none ";
+
+  // Gender color
+  if (m.gender === "Male") cls += "text-blue-700 ";
+  else if (m.gender === "Female") cls += "text-pink-600 ";
+  else cls += "text-gray-600 ";
+
+  // Marital status style
+  if (m.maritalStatus === "Married") cls += "font-semibold ";
+  else if (m.maritalStatus?.toLowerCase().includes("widow")) cls += "italic ";
+  else cls += "font-normal ";
+
+  return cls;
+};
+
+
+  /* ================= RENDER ================= */
   return (
     <div className="p-4 max-w-3xl mx-auto">
+
+      {/* TOP BAR */}
+      <div className="flex flex-wrap gap-2 justify-between items-center mb-2">
+        <h1 className="font-semibold text-lg">Family Directory</h1>
+
+        <button
+          onClick={() => setSortMode((p) => (p === "srno" ? "alpha" : "srno"))}
+          className="px-3 py-1 text-sm bg-gray-700 text-white rounded"
+        >
+          {sortMode === "srno" ? "Sr No" : "A–Z"}
+        </button>
+
+        <button
+          onClick={refresh}
+          disabled={syncing}
+          className="flex items-center gap-2 px-3 py-1 text-sm bg-blue-600 text-white rounded disabled:opacity-50"
+        >
+          <FaSync className={syncing ? "animate-spin" : ""} />
+          Refresh
+        </button>
+      </div>
 
       {/* SEARCH */}
       <input
@@ -203,264 +242,120 @@ const grouped = filteredFamilies.reduce((acc, f) => {
         </button>
       </div>
 
-      {/* 🔍 SEARCH MODE → FULL CARDS */}
+      {/* SEARCH MODE */}
       {searchMode &&
         searchedFamilies.map((family) => (
           <div key={family.familyId} className="bg-white border rounded p-4 mb-4">
             {Object.values(family.members || {}).map((m) => (
-              <div
-                key={m.id}
-                className="flex justify-between items-center mb-2 border-b pb-2"
-              >
-                <a href={`tel:${m.mobile}`} className="text-blue-600 text-xl">
-                  <FaPhone />
-                </a>
-
-                <span
-  className={`flex-1 text-left ml-2 select-none
-    ${
-      m.gender === "Male"
-        ? "text-blue-700"
-        : m.gender === "Female"
-        ? "text-pink-600"
-        : "text-gray-600"
-    }
-    ${
-      m.maritalStatus === "Married"
-        ? "font-semibold"
-        : m.maritalStatus?.toLowerCase().includes("widow")
-        ? "italic"
-        : "font-normal"
-    }
-  `}
-  onTouchStart={() => {
-    const timer = setTimeout(() => showMemberInfo(m), 500);
-    setPressTimer(timer);
-  }}
-  onTouchEnd={() => {
-    if (pressTimer) clearTimeout(pressTimer);
-  }}
-  onMouseDown={() => {
-    const timer = setTimeout(() => showMemberInfo(m), 600);
-    setPressTimer(timer);
-  }}
-  onMouseUp={() => {
-    if (pressTimer) clearTimeout(pressTimer);
-  }}
-  onContextMenu={(e) => {
-    e.preventDefault();
-    showMemberInfo(m);
-  }}
+              <div key={m.id} className="flex items-center gap-3 mb-2 border-b pb-2">
+                <FaPhone />
+               <span
+  className={getMemberClass(m)}
+  {...attachLongPressHandlers(m)}
 >
   {renderName(m.name)}
 </span>
 
-
-                <a
-                  href={`https://wa.me/91${m.mobile}`}
-                  className="text-green-600 text-xl"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <FaWhatsapp />
-                </a>
+                <FaWhatsapp
+                  className="cursor-pointer text-green-600"
+                  onClick={() =>
+                    window.open(`https://wa.me/91${m.mobile}`, "_blank")
+                  }
+                />
               </div>
             ))}
           </div>
         ))}
 
-      {/* 🟦 GROUP MODE */}
+      {/* GROUP MODE */}
       {!searchMode &&
         Object.entries(grouped).map(([group, famList]) => (
-          <div key={group} className="mb-5">
-           {/* <h2 className="font-bold text-lg mb-2">{group}   </h2>*/}
-            {console.log("fam",[famList.familyId]) }
+          <div key={group}>
             {famList.map((family) => {
               const { primary, extra } = splitMembers(family.members);
-
               return (
-                <div key={family.familyId} className="bg-white border rounded p-3 mb-3">
-                <div className="mb-3 text-sm font-semibold text-gray-800 border-b pb-2">
-  <span className="bg-gray-100 px-2 py-1 rounded mr-2">
-    #{family.familyId}
-  </span>
-  <span>
-    {family.info.currentCity}
-    <span className="text-gray-500 font-normal">
-      {" "}({family.info.nativeCity})
-    </span>
-  </span>
-</div>
+                <div key={family.familyId} className="bg-white border rounded p-1 mb-1">
+                  <div className="text-sm font-semibold border-b pb-1 mb-1">
+                    #{family.familyId} {family.info.currentCity} ({family.info.nativeCity})
+                  </div>
 
-                
-                
-                  {/* COLLAPSED */}
                   {primary.map((m) => (
-  <div
-    key={m.id}
-    className={`flex justify-between items-center mb-2 p-2 
-      ${ m.gender === "Male"
-        ? "text-blue-700"
-        : m.gender === "Female"
-        ? "text-pink-600"
-        : "text-gray-600"
-      }`}
-  >
-    {/* CALL */}
-    <a href={`tel:${m.mobile}`} className="text-blue-600 text-xl">
-      <FaPhone />
-    </a>
-
-    {/* NAME */}
-    <span
-  className={`flex-1 text-left ml-2 select-none
-    ${
-      m.gender === "Male"
-        ? "text-blue-700"
-        : m.gender === "Female"
-        ? "text-pink-600"
-        : "text-gray-600"
-    }
-    ${
-      m.maritalStatus === "Married"
-        ? "font-semibold"
-        : m.maritalStatus?.toLowerCase().includes("widow")
-        ? "italic"
-        : "font-normal"
-    }
-  `}
-  onTouchStart={() => {
-    const timer = setTimeout(() => showMemberInfo(m), 500);
-    setPressTimer(timer);
-  }}
-  onTouchEnd={() => {
-    if (pressTimer) clearTimeout(pressTimer);
-  }}
-  onMouseDown={() => {
-    const timer = setTimeout(() => showMemberInfo(m), 600);
-    setPressTimer(timer);
-  }}
-  onMouseUp={() => {
-    if (pressTimer) clearTimeout(pressTimer);
-  }}
-  onContextMenu={(e) => {
-    e.preventDefault();
-    showMemberInfo(m);
-  }}
+                    <div key={m.id} className="flex items-center gap-3 p-1">
+                      <FaPhone />
+                      <span
+  className={getMemberClass(m)}
+  {...attachLongPressHandlers(m)}
 >
   {renderName(m.name)}
 </span>
 
+                      <FaWhatsapp
+                        className="cursor-pointer"
+                        onClick={() =>
+                          window.open(`https://wa.me/91${m.mobile}`, "_blank")
+                        }
+                      />
+                      {extra.length > 0 && (
+                        <button
+                          onClick={() =>
+                            setExpanded((p) => ({
+                              ...p,
+                              [family.familyId]: !p[family.familyId],
+                            }))
+                          }
+                        >
+                          {expanded[family.familyId] ? <FaChevronUp /> : <FaChevronDown />}
+                        </button>
+                      )}
+                    </div>
+                  ))}
 
-    {/* ACTIONS */}
-    <div className="flex gap-3 items-center">
-      <a
-        href={`https://wa.me/91${m.mobile}`}
-        className="text-green-600 text-xl"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        <FaWhatsapp />
-      </a>
-
-     
-
-      {/* EXPAND / COLLAPSE (UNCHANGED) */}
-      {extra.length > 0 && (
-        <button
-          onClick={() =>
-            setExpanded((prev) => ({
-              ...prev,
-              [family.familyId]: !prev[family.familyId],
-            }))
-          }
-          className="text-xl"
-        >
-          {expanded[family.familyId] ? <FaChevronUp /> : <FaChevronDown />}
-        </button>
-      )}
-    </div>
-  </div>
-))}
-
-
-                  {/* EXPANDED */}
                   {expanded[family.familyId] &&
-  extra.map((m) => (
-    <div
-      key={m.id}
-      className={`flex justify-between items-center mb-2 p-2 
-        ${ m.gender === "Male"
-        ? "text-blue-700"
-        : m.gender === "Female"
-        ? "text-pink-600"
-        : "text-gray-600"
-        }`}
-    >
-      <a href={`tel:${m.mobile}`} className="text-blue-600 text-xl">
-        <FaPhone />
-      </a>
-<span
-  className={`flex-1 text-left ml-1 select-none
-    ${
-      m.gender === "Male"
-        ? "text-blue-700"
-        : m.gender === "Female"
-        ? "text-pink-600"
-        : "text-gray-600"
-    }
-    ${
-      m.maritalStatus === "Married"
-        ? "font-semibold"
-        : m.maritalStatus?.toLowerCase().includes("widow")
-        ? "italic"
-        : "font-normal"
-    }
-  `}
-  onTouchStart={() => {
-    const timer = setTimeout(() => showMemberInfo(m), 500);
-    setPressTimer(timer);
-  }}
-  onTouchEnd={() => {
-    if (pressTimer) clearTimeout(pressTimer);
-  }}
-  onMouseDown={() => {
-    const timer = setTimeout(() => showMemberInfo(m), 600);
-    setPressTimer(timer);
-  }}
-  onMouseUp={() => {
-    if (pressTimer) clearTimeout(pressTimer);
-  }}
-  onContextMenu={(e) => {
-    e.preventDefault();
-    showMemberInfo(m);
-  }}
+                    extra.map((m) => (
+                      <div key={m.id} className="flex items-center gap-3 p-2">
+                        <FaPhone />
+                        <span
+  className={getMemberClass(m)}
+  {...attachLongPressHandlers(m)}
 >
   {renderName(m.name)}
 </span>
 
-
-
-      <div className="flex gap-3 items-center">
-        <a
-          href={`https://wa.me/91${m.mobile}`}
-          className="text-green-600 text-xl"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <FaWhatsapp />
-        </a>
-
-       
-      </div>
-    </div>
-  ))}
-
+                        <FaWhatsapp
+                          className="cursor-pointer"
+                          onClick={() =>
+                            window.open(`https://wa.me/91${m.mobile}`, "_blank")
+                          }
+                        />
+                      </div>
+                    ))}
                 </div>
               );
             })}
           </div>
         ))}
+
+      {/* MEMBER INFO TOOLTIP */}
+      {infoPopup && (
+        <div className="fixed inset-0 z-50" onClick={() => setInfoPopup(null)}>
+          <div
+            className="absolute bg-white shadow-lg rounded-lg p-3 text-sm max-w-xs"
+            style={{
+              left: infoPopup.x,
+              top: infoPopup.y,
+              transform: "translate(-50%, -110%)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="font-semibold mb-1">{infoPopup.member.name}</div>
+            <div>🎂 {infoPopup.member.birthdate || "NA"}</div>
+            <div>🎓 {infoPopup.member.education || "NA"}</div>
+            <div>
+              🏠 {infoPopup.member.currentCity} ({infoPopup.member.nativeCity})
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
