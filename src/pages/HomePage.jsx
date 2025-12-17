@@ -1,3 +1,5 @@
+// src/pages/HomePage.jsx
+
 import React, { useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import { Link, useNavigate } from "react-router-dom";
@@ -6,7 +8,7 @@ export default function HomePage() {
   const { user, userRecord, loading, logout } = useAuth();
   const navigate = useNavigate();
 
-  // ❗ ALL HOOKS MUST BE AT THE TOP
+  /* ---------------- REDIRECT IF NO USER RECORD ---------------- */
   useEffect(() => {
     if (!loading && user && !userRecord) {
       navigate("/register", { replace: true });
@@ -18,19 +20,16 @@ export default function HomePage() {
     return <div className="p-6 text-center">Please login</div>;
   }
 
-  /* ---------------- GLOBAL LOADING ---------------- */
   if (loading) {
     return <div className="p-6 text-center">Loading your account…</div>;
   }
 
-  /* ---------------- SAFETY: USER RECORD MISSING ---------------- */
   if (!userRecord) {
-    // the redirect happens in useEffect → SAFE
     return <div className="p-6 text-center">Setting up your account…</div>;
   }
 
-  /* ---------------- UI CONTENT ---------------- */
-  const familySrno = userRecord.familyId; // FIXED
+  /* ---------------- DERIVED STATE ---------------- */
+  const familyId = userRecord.familyId;
   const pendingJoin = userRecord.pendingJoin;
   const isAdmin = userRecord.role === "admin";
 
@@ -46,9 +45,9 @@ export default function HomePage() {
       </div>
 
       {/* STATE A: FAMILY LINKED */}
-      {familySrno && (
+      {familyId && (
         <Link
-          to={`/family/${familySrno}`}
+          to={`/family/${familyId}`}
           className="block w-full bg-blue-600 text-white py-2 rounded text-center mb-4"
         >
           View My Family
@@ -56,10 +55,10 @@ export default function HomePage() {
       )}
 
       {/* STATE B: JOIN PENDING */}
-      {!familySrno && pendingJoin && (
+      {!familyId && pendingJoin && (
         <div className="bg-yellow-50 border border-yellow-300 p-4 rounded mb-4 text-sm text-center">
           <p className="font-semibold mb-1">⏳ Join Request Pending</p>
-          <p className="mb-3">Family #{pendingJoin.familySrno}</p>
+          <p className="mb-3">Family #{pendingJoin.familyId}</p>
 
           <Link
             to="/join-family"
@@ -71,7 +70,7 @@ export default function HomePage() {
       )}
 
       {/* STATE C: NO FAMILY */}
-      {!familySrno && !pendingJoin && (
+      {!familyId && !pendingJoin && (
         <div className="space-y-3">
           <Link
             to="/join-family"

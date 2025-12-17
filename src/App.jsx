@@ -14,7 +14,7 @@ import FamilyDetailPage from "./pages/FamilyDetailPage";
 import RegisterEmailPage from "./pages/RegisterEmailPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 import FamilyDirectoryPage from "./pages/FamilyDirectoryPage";
-
+import FamilyJoinRequestsPage from "./pages/FamilyJoinRequestsPage";
 import DebugPage from "./pages/DebugPage";
 
 export default function App() {
@@ -83,6 +83,18 @@ export default function App() {
           }
         />
 
+<Route 
+path="/family/:familyId/requests"
+ element={
+
+<ProtectedRoute>
+      <MainLayout>
+        <FamilyJoinRequestsPage />
+      </MainLayout>
+    </ProtectedRoute>   
+ 
+ 
+ } />
 
 
         {/* PROTECTED ROUTES */}

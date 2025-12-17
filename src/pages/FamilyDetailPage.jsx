@@ -1,7 +1,5 @@
-// src/pages/FamilyDetailPage.jsx
-
 /**
- * 👨‍👩‍👧‍👦 FAMILY DETAIL PAGE – FINAL STRUCTURE (FROZEN)
+ * 👨‍👩‍👧‍👦 FAMILY DETAIL PAGE – CLEAN & FINAL
  *
  * DATA MODEL (DO NOT BREAK):
  * ------------------------------------------------
@@ -9,6 +7,7 @@
  *  ├─ info
  *  │   ├─ currentCity
  *  │   ├─ nativeCity
+ *  │   ├─ address (optional)
  *  │   └─ editorEmails
  *  ├─ members/{memberId = timestamp}
  *  ├─ pendingRequests
@@ -20,45 +19,43 @@
 
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase";
 import { ref, get, set, update, remove } from "firebase/database";
+import { useAuth } from "../context/AuthContext";
 import MemberForm from "../components/MemberForm";
+import { Link } from "react-router-dom";
 
 export default function FamilyDetailPage() {
   const { srno: familyId } = useParams();
-
   const navigate = useNavigate();
+
   const { user, userRecord, loading: authLoading } = useAuth();
   const uid = user?.uid;
 
   const [family, setFamily] = useState(null);
   const [members, setMembers] = useState({});
-  const [pendingUsers, setPendingUsers] = useState({});
   const [loading, setLoading] = useState(true);
+
+  const [editingField, setEditingField] = useState(null);
+  const [fieldValue, setFieldValue] = useState("");
 
   const [memberModalOpen, setMemberModalOpen] = useState(false);
   const [editMember, setEditMember] = useState(null);
-  const [processingUid, setProcessingUid] = useState(null);
 
   /* ---------------- LOAD FAMILY ---------------- */
   useEffect(() => {
-    async function loadFamily() {
+    async function load() {
       const snap = await get(ref(db, `families/${familyId}`));
-      if (snap.exists()) {
-        setFamily(snap.val());
-      }
+      if (snap.exists()) setFamily(snap.val());
       setLoading(false);
     }
-    loadFamily();
+    load();
   }, [familyId]);
 
   /* ---------------- LOAD MEMBERS ---------------- */
   useEffect(() => {
     async function loadMembers() {
-      const snap = await get(
-        ref(db, `families/${familyId}/members`)
-      );
+      const snap = await get(ref(db, `families/${familyId}/members`));
       setMembers(snap.exists() ? snap.val() : {});
     }
     loadMembers();
@@ -74,130 +71,70 @@ export default function FamilyDetailPage() {
       family.info?.editorEmails?.[uid] === true
     );
 
-  /* ---------------- EDIT CITY / NATIVE ---------------- */
-  const editField = async (field, label) => {
+  /* ---------------- INLINE EDIT ---------------- */
+  const startEdit = (field) => {
     if (!isEditor) return;
+    setEditingField(field);
+    setFieldValue(family.info?.[field] || "");
+  };
 
-    const value = window.prompt(
-      `Edit ${label}`,
-      family.info?.[field] || ""
-    );
-    if (value === null) return;
+  const saveEdit = async () => {
+    const now = Date.now();
 
     await update(ref(db, `families/${familyId}/info`), {
-      [field]: value.trim(),
+      [editingField]: fieldValue.trim(),
     });
 
     await update(ref(db, `families/${familyId}/meta`), {
-      updatedAt: Date.now(),
+      updatedAt: now,
     });
 
     setFamily((f) => ({
       ...f,
-      info: { ...f.info, [field]: value.trim() },
+      info: { ...f.info, [editingField]: fieldValue.trim() },
     }));
+
+    setEditingField(null);
   };
 
-  /* ---------------- LOAD PENDING REQUESTS ---------------- */
-  useEffect(() => {
-    if (!isEditor || !family?.pendingRequests) {
-      setPendingUsers({});
-      return;
-    }
-    setPendingUsers(family.pendingRequests);
-  }, [family, isEditor]);
+  /* ---------------- ADD / EDIT MEMBER ---------------- */
+  const handleSaveMember = async (data, id = null) => {
+    const memberId = id || Date.now();
+    const now = Date.now();
 
-  /* ---------------- APPROVE JOIN ---------------- */
-  const confirmApprove = async (pid, name) => {
-    if (!window.confirm(`Approve join request for ${name}?`)) return;
-
-    try {
-      setProcessingUid(pid);
-
-      await set(
-        ref(db, `families/${familyId}/info/editorEmails/${pid}`),
-        true
-      );
-
-      await update(ref(db, `users/${pid}`), {
-        familyId,
-        role: "member",
-      });
-
-      await remove(
-        ref(db, `families/${familyId}/pendingRequests/${pid}`)
-      );
-
-      const add = window.confirm(
-        `Add ${name} as family member?\n\nOK = Yes\nCancel = Editor only`
-      );
-
-      if (add) {
-        const memberId = Date.now();
-        await set(
-          ref(db, `families/${familyId}/members/${memberId}`),
-          {
-            id: memberId,
-            name,
-            active: true,
-            addedViaJoin: true,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          }
-        );
-
-        setMembers((m) => ({
-          ...m,
-          [memberId]: {
-            id: memberId,
-            name,
-            active: true,
-            addedViaJoin: true,
-          },
-        }));
-      }
-
-      setFamily((f) => {
-        const p = { ...(f.pendingRequests || {}) };
-        delete p[pid];
-        return { ...f, pendingRequests: p };
-      });
-    } finally {
-      setProcessingUid(null);
-    }
-  };
-
-  /* ---------------- REJECT JOIN ---------------- */
-  const confirmReject = async (pid, name) => {
-    if (!window.confirm(`Reject join request for ${name}?`)) return;
-
-    await remove(
-      ref(db, `families/${familyId}/pendingRequests/${pid}`)
-    );
-
-    setFamily((f) => {
-      const p = { ...(f.pendingRequests || {}) };
-      delete p[pid];
-      return { ...f, pendingRequests: p };
+    await update(ref(db, `families/${familyId}/members/${memberId}`), {
+      ...data,
+      id: memberId,
+      active: data.active !== false,
+      updatedAt: now,
     });
+
+    await update(ref(db, `families/${familyId}/meta`), {
+      updatedAt: now,
+      membersUpdatedAt: now,
+    });
+
+    setMembers((m) => ({
+      ...m,
+      [memberId]: {
+        ...(m[memberId] || {}),
+        ...data,
+        id: memberId,
+        active: data.active !== false,
+      },
+    }));
   };
 
   /* ---------------- LEAVE FAMILY ---------------- */
   const leaveFamily = async () => {
-    if (!userRecord || userRecord.familyId !== familyId) return;
-    if (!window.confirm("Leave this family? You will be hidden.")) return;
+    if (!window.confirm("Leave this family?")) return;
 
-    await update(
-      ref(db, `families/${familyId}/members/${uid}`),
-      {
-        active: false,
-        leftAt: Date.now(),
-      }
-    );
+    await update(ref(db, `families/${familyId}/members/${uid}`), {
+      active: false,
+      leftAt: Date.now(),
+    });
 
-    await remove(
-      ref(db, `families/${familyId}/info/editorEmails/${uid}`)
-    );
+    await remove(ref(db, `families/${familyId}/info/editorEmails/${uid}`));
 
     await update(ref(db, `users/${uid}`), {
       familyId: null,
@@ -207,109 +144,85 @@ export default function FamilyDetailPage() {
     navigate("/join-family");
   };
 
-  /* ---------------- ADD / EDIT MEMBER ---------------- */
-  const handleSaveMember = async (data, id = null) => {
-  const memberId = id || Date.now();
-  const now = Date.now();
-
-  // 1️⃣ Save / update member
-  await update(
-    ref(db, `families/${familyId}/members/${memberId}`),
-    {
-      ...data,
-      id: memberId,
-      active: data.active !== false,
-      updatedAt: now,
-    }
-  );
-
-  // 2️⃣ 🔥 CRITICAL: update family meta
-  await update(
-    ref(db, `families/${familyId}/meta`),
-    {
-      updatedAt: now,           // directory + cache trigger
-      membersUpdatedAt: now,    // optional but recommended
-    }
-  );
-
-  // 3️⃣ Update local state
-  setMembers((m) => ({
-    ...m,
-    [memberId]: {
-      ...(m[memberId] || {}),
-      ...data,
-      id: memberId,
-      active: data.active !== false,
-    },
-  }));
-};
-
-
   /* ---------------- UI STATES ---------------- */
   if (loading || authLoading) return <div className="p-4">Loading…</div>;
   if (!family) return <div className="p-4">Family not found</div>;
 
-  const allMembers = Object.entries(members || {});
-  const visibleMembers = isEditor
-    ? allMembers
-    : allMembers.filter(([_, m]) => m.active !== false);
+  const visibleMembers = Object.entries(members || {}).filter(
+    ([, m]) => isEditor || m.active !== false
+  );
 
+  /* ---------------- RENDER ---------------- */
   return (
     <div className="p-4 max-w-md mx-auto">
-      <h2 className="text-xl font-bold mb-4">
-        Family #{familyId}
-      </h2>
+      <h2 className="text-xl font-bold mb-4">Family #{familyId}</h2>
 
-      {/* CITY / NATIVE */}
-      {/* CITY / NATIVE */}
-<div className="bg-white p-3 rounded shadow mb-4 space-y-2">
-  <div className="flex justify-between">
-    <span>
-      Current City: <b>{family.info?.currentCity || "-"}</b>
-    </span>
-    {isEditor && (
-      <button onClick={() => editField("currentCity", "Current City")}>
-        ✏️
-      </button>
-    )}
-  </div>
+      {isEditor && family.pendingRequests && (
+  <Link
+    to={`/family/${familyId}/requests`}
+    className="text-sm text-blue-600 underline"
+  >
+    Edit Requests ({Object.keys(family.pendingRequests).length})
+  </Link>
+)}
 
-  <div className="flex justify-between">
-    <span>
-      Native City: <b>{family.info?.nativeCity || "-"}</b>
-    </span>
-    {isEditor && (
-      <button onClick={() => editField("nativeCity", "Native City")}>
-        ✏️
-      </button>
-    )}
-  </div>
 
-  {/* ADDRESS */}
-  <div className="flex justify-between items-start">
-    <span className="flex-1">
-      Address:
-      <br />
-      <b className="text-sm">
-        {family.info?.address || "—"}
-      </b>
-    </span>
+      {/* FAMILY INFO */}
+      <div className="bg-white p-3 rounded shadow mb-4 space-y-2">
 
-    {isEditor && (
-      <button
-        onClick={() => editField("address", "Address")}
-        className="ml-2 text-blue-600"
-        title="Edit Address"
-      >
-        ✏️
-      </button>
-    )}
-  </div>
-</div>
+        {["currentCity", "nativeCity", "address"].map((field) => (
+          <div key={field} className="flex justify-between items-start">
+            <span className="flex-1">
+              {field === "currentCity" && "Current City"}
+              {field === "nativeCity" && "Native City"}
+              {field === "address" && "Address"}:
+              <br />
 
+              {editingField === field ? (
+                field === "address" ? (
+                  <textarea
+                    className="w-full border p-2 rounded text-sm"
+                    value={fieldValue}
+                    onChange={(e) => setFieldValue(e.target.value)}
+                  />
+                ) : (
+                  <input
+                    className="w-full border p-2 rounded text-sm"
+                    value={fieldValue}
+                    onChange={(e) => setFieldValue(e.target.value)}
+                  />
+                )
+              ) : (
+                <b className="text-sm">
+                  {family.info?.[field] || "—"}
+                </b>
+              )}
+            </span>
+
+            {isEditor && (
+              editingField === field ? (
+                <button
+                  onClick={saveEdit}
+                  className="ml-2 text-green-600"
+                >
+                  ✔
+                </button>
+              ) : (
+                <button
+                  onClick={() => startEdit(field)}
+                  className="ml-2 text-blue-600"
+                >
+                  ✏️
+                </button>
+              )
+            )}
+          </div>
+        ))}
+      </div>
 
       {/* MEMBERS */}
       <h3 className="font-bold mb-2">Members</h3>
+
       {visibleMembers.map(([id, m]) => (
         <div
           key={id}
@@ -318,9 +231,7 @@ export default function FamilyDetailPage() {
           <div>
             <b>{m.name}</b>
             {m.active === false && (
-              <span className="text-xs text-gray-400 ml-2">
-                Hidden
-              </span>
+              <span className="text-xs text-gray-400 ml-2">Hidden</span>
             )}
           </div>
 

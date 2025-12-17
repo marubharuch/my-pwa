@@ -1,24 +1,14 @@
 // src/pages/JoinFamilyPage.jsx
 
 /**
- * 👪 JOIN FAMILY PAGE – READ OPTIMIZED
+ * 👪 JOIN FAMILY PAGE – FINAL (CLEAN & SAFE)
  *
- * IMPORTANT ARCHITECTURE RULES (DO NOT BREAK):
+ * RULES (DO NOT BREAK):
  * ------------------------------------------------
- * ✅ User profile MUST come from AuthContext (`userRecord`)
- * ✅ This page must NOT read `/users/{uid}` again
- * ✅ `pendingJoin` is derived from `userRecord`
- *
- * WHY:
- * - Avoid duplicate DB reads
- * - Keep billing low
- * - Single source of truth
- *
- * UI STATES (DO NOT REMOVE):
- * ------------------------------------------------
- * 1️⃣ Already in a family (disconnect option)
- * 2️⃣ Pending join request (cancel option)
- * 3️⃣ Fresh join request form
+ * ✅ User profile ONLY from AuthContext (userRecord)
+ * ✅ No direct /users reads
+ * ✅ Optimistic UI via localPending
+ * ✅ Uses familyId consistently
  */
 
 import React, { useState, useEffect } from "react";
@@ -31,24 +21,27 @@ export default function JoinFamilyPage() {
   const { user, userRecord, loading } = useAuth();
   const navigate = useNavigate();
 
-  /* ---------------- LOCAL UI STATE ---------------- */
-  const [srno, setSrno] = useState("");
+  /* ---------------- LOCAL STATE ---------------- */
+  const [familyIdInput, setFamilyIdInput] = useState("");
   const [familyLabel, setFamilyLabel] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const pending = userRecord?.pendingJoin;
-  const familySrno = userRecord?.familySrno;
+  // ✅ optimistic pending state
+  const [localPending, setLocalPending] = useState(null);
 
-  /* ---------------- LOAD FAMILY LABEL ONLY (OPTIONAL) ---------------- */
+  /* ---------------- DERIVED STATE ---------------- */
+  const familyId = userRecord?.familyId;
+  const pending = localPending || userRecord?.pendingJoin;
+
+  /* ---------------- LOAD FAMILY LABEL (LIGHT READ) ---------------- */
   useEffect(() => {
-    if (!pending?.familySrno) return;
+    if (!pending?.familyId) return;
 
-    get(ref(db, `families/${pending.familySrno}`)).then((snap) => {
+    get(ref(db, `families/${pending.familyId}/info`)).then((snap) => {
       if (snap.exists()) {
-        setFamilyLabel(
-          snap.val().currentCity || snap.val().nativeCity || ""
-        );
+        const info = snap.val();
+        setFamilyLabel(info.currentCity || info.nativeCity || "");
       }
     });
   }, [pending]);
@@ -56,15 +49,16 @@ export default function JoinFamilyPage() {
   /* ---------------- SEND JOIN REQUEST ---------------- */
   const sendRequest = async () => {
     setError("");
-    if (!srno) {
-      setError("Please enter Family Serial Number");
+
+    if (!familyIdInput.trim()) {
+      setError("Please enter Family Number");
       return;
     }
 
     try {
       setBusy(true);
 
-      const famSnap = await get(ref(db, `families/${srno}`));
+      const famSnap = await get(ref(db, `families/${familyIdInput}`));
       if (!famSnap.exists()) {
         setError("Family not found");
         setBusy(false);
@@ -72,25 +66,28 @@ export default function JoinFamilyPage() {
       }
 
       const payload = {
-        familySrno: srno,
+        familyId: familyIdInput.trim(),
         requestedAt: Date.now(),
       };
 
       await set(ref(db, `users/${user.uid}/pendingJoin`), payload);
       await set(
-        ref(db, `families/${srno}/pendingRequests/${user.uid}`),
-        { requestedAt: Date.now() }
+        ref(db, `families/${familyIdInput}/pendingRequests/${user.uid}`),
+        { requestedAt: payload.requestedAt }
       );
 
+      // ✅ IMMEDIATE UI FEEDBACK
+      setLocalPending(payload);
+      setFamilyIdInput("");
     } catch (err) {
       console.error(err);
       setError("Unable to send join request");
+    } finally {
+      setBusy(false);
     }
-
-    setBusy(false);
   };
 
-  /* ---------------- CANCEL JOIN REQUEST ---------------- */
+  /* ---------------- CANCEL REQUEST ---------------- */
   const cancelRequest = async () => {
     if (!pending) return;
 
@@ -99,56 +96,56 @@ export default function JoinFamilyPage() {
 
       await remove(ref(db, `users/${user.uid}/pendingJoin`));
       await remove(
-        ref(db, `families/${pending.familySrno}/pendingRequests/${user.uid}`)
+        ref(db, `families/${pending.familyId}/pendingRequests/${user.uid}`)
       );
 
+      // ✅ clear optimistic state
+      setLocalPending(null);
+      setFamilyLabel("");
     } catch (err) {
       console.error(err);
       setError("Unable to cancel request");
+    } finally {
+      setBusy(false);
     }
-
-    setBusy(false);
   };
 
-  /* ---------------- DISCONNECT FROM CURRENT FAMILY ---------------- */
+  /* ---------------- DISCONNECT FAMILY ---------------- */
   const disconnectFamily = async () => {
-    if (!familySrno) return;
+    if (!familyId) return;
 
     const ok = window.confirm(
       "You will leave your current family.\n\n" +
       "• You will be hidden from members\n" +
-      "• You can request to join another family\n\n" +
-      "Continue?"
+      "• You can join another family\n\nContinue?"
     );
     if (!ok) return;
 
     try {
       setBusy(true);
 
-      await update(ref(db, `families/${familySrno}/members/${user.uid}`), {
+      await update(ref(db, `families/${familyId}/members/${user.uid}`), {
         active: false,
         leftAt: Date.now(),
       });
 
       await update(ref(db, `users/${user.uid}`), {
-        familySrno: null,
+        familyId: null,
         role: userRecord.role === "admin" ? "admin" : "guest",
       });
-
     } catch (err) {
       console.error(err);
       setError("Unable to disconnect family");
+    } finally {
+      setBusy(false);
     }
-
-    setBusy(false);
   };
 
-  /* ---------------- GLOBAL LOADING ---------------- */
+  /* ---------------- LOADING ---------------- */
   if (loading) {
     return <div className="p-6 text-center">Loading…</div>;
   }
 
-  /* ---------------- AUTH SAFETY ---------------- */
   if (!user || !userRecord) {
     return <div className="p-6 text-center">Please login</div>;
   }
@@ -166,15 +163,15 @@ export default function JoinFamilyPage() {
           <p className="text-red-500 text-sm text-center mb-3">{error}</p>
         )}
 
-        {/* ✅ STATE 1 — ALREADY IN FAMILY */}
-        {familySrno && !pending && (
+        {/* STATE 1 — ALREADY IN FAMILY */}
+        {familyId && !pending && (
           <>
             <p className="text-center text-sm mb-4">
-              ✅ You are already part of <b>Family #{familySrno}</b>
+              ✅ You are part of <b>Family #{familyId}</b>
             </p>
 
             <button
-              onClick={() => navigate(`/family/${familySrno}`)}
+              onClick={() => navigate(`/family/${familyId}`)}
               className="w-full bg-blue-600 text-white py-2 rounded mb-3"
             >
               Go to My Family
@@ -190,15 +187,15 @@ export default function JoinFamilyPage() {
           </>
         )}
 
-        {/* ✅ STATE 2 — PENDING */}
-        {!familySrno && pending && (
+        {/* STATE 2 — PENDING */}
+        {!familyId && pending && (
           <>
             <p className="text-center text-sm mb-2">
               ⏳ Join request pending
             </p>
 
             <p className="text-center text-sm mb-4">
-              Family #{pending.familySrno}
+              Family #{pending.familyId}
               {familyLabel && ` – ${familyLabel}`}
             </p>
 
@@ -212,14 +209,15 @@ export default function JoinFamilyPage() {
           </>
         )}
 
-        {/* ✅ STATE 3 — NEW JOIN */}
-        {!familySrno && !pending && (
+        {/* STATE 3 — NEW JOIN */}
+        {!familyId && !pending && (
           <>
             <input
               className="w-full border px-3 py-2 rounded mb-3"
-              placeholder="Family Serial Number"
-              value={srno}
-              onChange={(e) => setSrno(e.target.value)}
+              placeholder="Family Number"
+              value={familyIdInput}
+              onChange={(e) => setFamilyIdInput(e.target.value)}
+              disabled={busy}
             />
 
             <button
@@ -227,7 +225,7 @@ export default function JoinFamilyPage() {
               className="w-full bg-green-600 text-white py-2 rounded"
               disabled={busy}
             >
-              Request to Join
+              {busy ? "Sending request…" : "Request to Join"}
             </button>
           </>
         )}

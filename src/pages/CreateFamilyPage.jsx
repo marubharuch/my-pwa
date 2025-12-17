@@ -12,6 +12,8 @@ export default function CreateFamilyPage() {
   const [nativeCity, setNativeCity] = useState("");
   const [address, setAddress] = useState(""); // ✅ NEW
   const [loading, setLoading] = useState(false);
+const [editingField, setEditingField] = useState(null); // "currentCity" | "nativeCity" | "address"
+const [editValue, setEditValue] = useState("");
 
   const handleCreate = async () => {
     if (!currentCity.trim()) {
@@ -68,6 +70,8 @@ export default function CreateFamilyPage() {
       setLoading(false);
     }
   };
+
+  
 
   return (
     <div className="p-4 max-w-md mx-auto space-y-3">
