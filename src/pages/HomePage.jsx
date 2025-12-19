@@ -1,31 +1,26 @@
 // src/pages/HomePage.jsx
 
-import React, { useEffect } from "react";
+import React from "react";
 import { useAuth } from "../context/AuthContext";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
+import CompleteProfileCard from "../components/CompleteProfileCard";
 
 export default function HomePage() {
   const { user, userRecord, loading, logout } = useAuth();
-  const navigate = useNavigate();
 
-  /* ---------------- REDIRECT IF NO USER RECORD ---------------- */
-  useEffect(() => {
-    if (!loading && user && !userRecord) {
-      navigate("/register", { replace: true });
-    }
-  }, [loading, user, userRecord, navigate]);
+  /* ---------------- LOADING ---------------- */
+  if (loading) {
+    return <div className="p-6 text-center">Loading…</div>;
+  }
 
   /* ---------------- AUTH GATE ---------------- */
   if (!user) {
     return <div className="p-6 text-center">Please login</div>;
   }
 
-  if (loading) {
-    return <div className="p-6 text-center">Loading your account…</div>;
-  }
-
+  /* ---------------- PROFILE COMPLETION ---------------- */
   if (!userRecord) {
-    return <div className="p-6 text-center">Setting up your account…</div>;
+    return <CompleteProfileCard />;
   }
 
   /* ---------------- DERIVED STATE ---------------- */
@@ -33,6 +28,7 @@ export default function HomePage() {
   const pendingJoin = userRecord.pendingJoin;
   const isAdmin = userRecord.role === "admin";
 
+  /* ---------------- HOME UI ---------------- */
   return (
     <div className="p-4 max-w-md mx-auto">
       <h1 className="text-2xl font-bold mb-4 text-center">
@@ -44,32 +40,7 @@ export default function HomePage() {
         <p><strong>Role:</strong> {userRecord.role}</p>
       </div>
 
-      {/* STATE A: FAMILY LINKED */}
-      {familyId && (
-        <Link
-          to={`/family/${familyId}`}
-          className="block w-full bg-blue-600 text-white py-2 rounded text-center mb-4"
-        >
-          View My Family
-        </Link>
-      )}
-
-      {/* STATE B: JOIN PENDING */}
-      {!familyId && pendingJoin && (
-        <div className="bg-yellow-50 border border-yellow-300 p-4 rounded mb-4 text-sm text-center">
-          <p className="font-semibold mb-1">⏳ Join Request Pending</p>
-          <p className="mb-3">Family #{pendingJoin.familyId}</p>
-
-          <Link
-            to="/join-family"
-            className="block w-full bg-yellow-600 text-white py-2 rounded"
-          >
-            View / Cancel Join Request
-          </Link>
-        </div>
-      )}
-
-      {/* STATE C: NO FAMILY */}
+      {/* AFTER PROFILE → FORCE FAMILY CHOICE */}
       {!familyId && !pendingJoin && (
         <div className="space-y-3">
           <Link
@@ -88,6 +59,32 @@ export default function HomePage() {
         </div>
       )}
 
+      {/* JOIN PENDING */}
+      {!familyId && pendingJoin && (
+        <div className="bg-yellow-50 border border-yellow-300 p-4 rounded mb-4 text-sm text-center">
+          <p className="font-semibold mb-1">⏳ Join Request Pending</p>
+          <p className="mb-3">Family #{pendingJoin.familyId}</p>
+
+          <Link
+            to="/join-family"
+            className="block w-full bg-yellow-600 text-white py-2 rounded"
+          >
+            View / Cancel Join Request
+          </Link>
+        </div>
+      )}
+
+      {/* FAMILY LINKED */}
+      {familyId && (
+        <Link
+          to={`/family/${familyId}`}
+          className="block w-full bg-blue-600 text-white py-2 rounded text-center mt-4"
+        >
+          View My Family
+        </Link>
+      )}
+
+      {/* ADMIN */}
       {isAdmin && (
         <Link
           to="/admin"
@@ -99,7 +96,7 @@ export default function HomePage() {
 
       <button
         onClick={logout}
-        className="w-full bg-red-500 text-white py-2 rounded mt-4"
+        className="w-full bg-red-500 text-white py-2 rounded mt-6"
       >
         Logout
       </button>

@@ -1,16 +1,28 @@
 // src/components/MemberForm.jsx
 import React, { useState, useEffect } from "react";
 
+/* ---------------- TEXT HELPERS ---------------- */
+// Proper Case, English only
+const toProperCase = (value) =>
+  value
+    .replace(/[^a-zA-Z\s]/g, "")
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+
+// English text only (letters, numbers, space, dot)
+const toEnglishText = (value) =>
+  value.replace(/[^a-zA-Z0-9.\s]/g, "");
+
 export default function MemberForm({ open, onClose, initial = null, onSave }) {
   /* ---------------- STATE ---------------- */
   const [name, setName] = useState("");
-  const [countryCode, setCountryCode] = useState("91"); // default India
+  const [countryCode, setCountryCode] = useState("91");
   const [mobile, setMobile] = useState("");
 
   const [gender, setGender] = useState("");
   const [maritalStatus, setMaritalStatus] = useState("");
 
-  const [birthdate, setBirthdate] = useState(""); // DD-MM-YYYY
+  const [birthdate, setBirthdate] = useState("");
   const [occupation, setOccupation] = useState("");
 
   const [education, setEducation] = useState("");
@@ -58,40 +70,23 @@ export default function MemberForm({ open, onClose, initial = null, onSave }) {
   if (!open) return null;
 
   /* ---------------- HELPERS ---------------- */
-const formatBirthdate = (value) => {
-  // allow digits and dash only
-  let v = value.replace(/[^\d-]/g, "").slice(0, 10);
+  const formatBirthdate = (value) => {
+    let v = value.replace(/[^\d-]/g, "").slice(0, 10);
+    if (/^\d-$/.test(v)) v = "0" + v;
+    const parts = v.split("-");
+    if (parts[0].length === 2 && parts.length === 1) v = parts[0] + "-";
+    if (parts.length === 2 && parts[1].length === 2)
+      v = parts[0] + "-" + parts[1] + "-";
+    return v;
+  };
 
-  // handle cases like "1-" → "01-"
-  if (/^\d-$/.test(v)) {
-    v = "0" + v;
-  }
-
-  // split by dash
-  const parts = v.split("-");
-
-  // DAY
-  if (parts[0].length === 2 && parts.length === 1) {
-    v = parts[0] + "-";
-  }
-
-  // MONTH
-  if (parts.length === 2 && parts[1].length === 2) {
-    v = parts[0] + "-" + parts[1] + "-";
-  }
-
-  return v;
-};
-
-
-const getAge = (birthdate) => {
-  if (!/^\d{2}-\d{2}-\d{4}$/.test(birthdate)) return null;
-
-  const [d, m, y] = birthdate.split("-").map(Number);
-  const dob = new Date(y, m - 1, d);
-  const diff = Date.now() - dob.getTime();
-  return Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25));
-};
+  const getAge = (birthdate) => {
+    if (!/^\d{2}-\d{2}-\d{4}$/.test(birthdate)) return null;
+    const [d, m, y] = birthdate.split("-").map(Number);
+    const dob = new Date(y, m - 1, d);
+    const diff = Date.now() - dob.getTime();
+    return Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25));
+  };
 
   const validBirthdate = (val) => {
     if (!val) return true;
@@ -103,11 +98,8 @@ const getAge = (birthdate) => {
 
   const validCountryCode = (cc) => /^\d{1,3}$/.test(cc);
   const validMobileNumber = (num) => /^\d{6,12}$/.test(num);
-
-  const validMobile = () => {
-    if (!mobile) return true;
-    return validCountryCode(countryCode) && validMobileNumber(mobile);
-  };
+  const validMobile = () =>
+    !mobile || (validCountryCode(countryCode) && validMobileNumber(mobile));
 
   /* ---------------- SAVE ---------------- */
   const handleSubmit = async (e) => {
@@ -134,37 +126,35 @@ const getAge = (birthdate) => {
       const fullMobile = mobile ? `${countryCode}${mobile}` : "";
 
       await onSave(
-  {
-    name: name.trim(),
-    mobile: fullMobile,
-    gender,
-    maritalStatus,
-    birthdate,
-    education: education.trim(),
+        {
+          name: name.trim(),
+          mobile: fullMobile,
+          gender,
+          maritalStatus,
+          birthdate,
+          education: education.trim(),
 
-    occupation:
-      (() => {
-        const age = getAge(birthdate);
-        return age && age >= 18 && age <= 65 ? occupation : "";
-      })(),
+          occupation: (() => {
+            const age = getAge(birthdate);
+            return age && age >= 18 && age <= 65 ? occupation : "";
+          })(),
 
-    piyarDetails:
-      gender === "Female" &&
-      ["Married", "Divorced", "Widow"].includes(maritalStatus)
-        ? piyarDetails.trim()
-        : "",
+          piyarDetails:
+            gender === "Female" &&
+            ["Married", "Divorced", "Widow"].includes(maritalStatus)
+              ? piyarDetails.trim()
+              : "",
 
-    stayAway: maritalStatus === "Unmarried" ? stayAway : false,
-    stayCity:
-      maritalStatus === "Unmarried" && stayAway
-        ? stayCity.trim()
-        : "",
+          stayAway: maritalStatus === "Unmarried" ? stayAway : false,
+          stayCity:
+            maritalStatus === "Unmarried" && stayAway
+              ? stayCity.trim()
+              : "",
 
-    active: true,
-  },
-  initial ? initial.id : null
-);
-
+          active: true,
+        },
+        initial ? initial.id : null
+      );
 
       onClose();
     } catch {
@@ -190,7 +180,7 @@ const getAge = (birthdate) => {
         <input
           placeholder="Name *"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => setName(toProperCase(e.target.value))}
           className="w-full border p-2 rounded"
         />
 
@@ -220,59 +210,53 @@ const getAge = (birthdate) => {
           Country code + mobile number (digits only)
         </p>
 
-        {/* GENDER */}
+        {/* GENDER + MARITAL */}
         <div className="flex gap-2">
-  {/* GENDER */}
-  <button
-    type="button"
-    className={`w-12 p-2 border rounded text-center ${
-      gender === "Male" ? "bg-blue-100" : ""
-    }`}
-    onClick={() => setGender("Male")}
-  >
-    M
-  </button>
+          <button
+            type="button"
+            className={`w-12 p-2 border rounded ${
+              gender === "Male" ? "bg-blue-100" : ""
+            }`}
+            onClick={() => setGender("Male")}
+          >
+            M
+          </button>
 
-  <button
-    type="button"
-    className={`w-12 p-2 border rounded text-center ${
-      gender === "Female" ? "bg-pink-100" : ""
-    }`}
-    onClick={() => setGender("Female")}
-  >
-    F
-  </button>
+          <button
+            type="button"
+            className={`w-12 p-2 border rounded ${
+              gender === "Female" ? "bg-pink-100" : ""
+            }`}
+            onClick={() => setGender("Female")}
+          >
+            F
+          </button>
 
-  {/* MARITAL STATUS */}
-  <select
-    value={maritalStatus}
-    onChange={(e) => setMaritalStatus(e.target.value)}
-    className="flex-1 border p-2 rounded"
-  >
-    <option value="">Marital Status</option>
+          <select
+            value={maritalStatus}
+            onChange={(e) => setMaritalStatus(e.target.value)}
+            className="flex-1 border p-2 rounded"
+          >
+            <option value="">Marital Status</option>
+            {gender === "Male" && (
+              <>
+                <option>Unmarried</option>
+                <option>Married</option>
+                <option>Divorced</option>
+                <option>Widower</option>
+              </>
+            )}
+            {gender === "Female" && (
+              <>
+                <option>Unmarried</option>
+                <option>Married</option>
+                <option>Divorced</option>
+                <option>Widow</option>
+              </>
+            )}
+          </select>
+        </div>
 
-    {gender === "Male" && (
-      <>
-        <option>Unmarried</option>
-        <option>Married</option>
-        <option>Divorced</option>
-        <option>Widower</option>
-      </>
-    )}
-
-    {gender === "Female" && (
-      <>
-        <option>Unmarried</option>
-        <option>Married</option>
-        <option>Divorced</option>
-        <option>Widow</option>
-      </>
-    )}
-  </select>
-</div>
-
-
-        {/* BIRTHDATE */}
         <input
           placeholder="Birthdate (DD-MM-YYYY)"
           value={birthdate}
@@ -285,42 +269,39 @@ const getAge = (birthdate) => {
         <input
           placeholder="Education"
           value={education}
-          onChange={(e) => setEducation(e.target.value)}
+          onChange={(e) => setEducation(toEnglishText(e.target.value))}
           className="w-full border p-2 rounded"
         />
+
         {(() => {
-  const age = getAge(birthdate);
-  if (age && age >= 18 && age <= 65) {
-    return (
-      <select
-        value={occupation}
-        onChange={(e) => setOccupation(e.target.value)}
-        className="w-full border p-2 rounded"
-      >
-        <option value="">Occupation</option>
-        <option>Student</option>
-        <option>Service</option>
-        <option>Business</option>
-        <option>Other</option>
-      </select>
-    );
-  }
-  return null;
-})()}
+          const age = getAge(birthdate);
+          return age && age >= 18 && age <= 65 ? (
+            <select
+              value={occupation}
+              onChange={(e) => setOccupation(e.target.value)}
+              className="w-full border p-2 rounded"
+            >
+              <option value="">Occupation</option>
+              <option>Student</option>
+              <option>Service</option>
+              <option>Business</option>
+              <option>Other</option>
+            </select>
+          ) : null;
+        })()}
 
-
-        {/* PIYAR */}
         {gender === "Female" &&
           ["Married", "Widow"].includes(maritalStatus) && (
             <textarea
               placeholder="Piyar / Mayaka details"
               value={piyarDetails}
-              onChange={(e) => setPiyarDetails(e.target.value)}
+              onChange={(e) =>
+                setPiyarDetails(toEnglishText(e.target.value))
+              }
               className="w-full border p-2 rounded"
             />
           )}
 
-        {/* UNMARRIED */}
         {maritalStatus === "Unmarried" && (
           <>
             <label className="text-sm">
@@ -337,7 +318,7 @@ const getAge = (birthdate) => {
               <input
                 placeholder="Current stay city"
                 value={stayCity}
-                onChange={(e) => setStayCity(e.target.value)}
+                onChange={(e) => setStayCity(toProperCase(e.target.value))}
                 className="w-full border p-2 rounded"
               />
             )}

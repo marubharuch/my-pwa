@@ -1,51 +1,58 @@
 // src/pages/LoginPage.jsx
 
 /**
- * 🔐 LOGIN PAGE – AUTH ENTRY POINT
+ * 🔐 LOGIN + REGISTER (MERGED) – FINAL
  *
- * FEATURES (DO NOT REMOVE WHEN ADDING NEW CODE):
+ * FEATURES:
  * ------------------------------------------------
  * ✅ Email + Password login
- * ✅ Google login (with new-user redirect to Register)
- * ✅ Forgot Password (Firebase reset email)
- * ✅ Forgot Email (lookup via publicUserIndex by Family SrNo)
+ * ✅ Email + Password + Confirm Password registration
+ * ✅ Auto-login after registration
+ * ✅ Google login
+ * ✅ Forgot Password
+ * ✅ Forgot Email (Family SrNo lookup)
  *
- * IMPORTANT FOR FUTURE EDITS:
+ * IMPORTANT:
  * ------------------------------------------------
- * - Do NOT remove modal states:
- *   showForgotPassword, showForgotEmail
- * - Forgot Email is NOT authentication – it is public lookup.
- * - Always add features BELOW existing sections, never replace them.
+ * ❌ NO /users writes here
+ * ❌ Auth only
+ * ✅ Profile completion handled on HomePage
  */
 
 import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { Link, useNavigate } from "react-router-dom";
-import { sendPasswordResetEmail } from "firebase/auth";
-import { auth,db } from "../firebase";
+import { useNavigate } from "react-router-dom";
+import {
+  sendPasswordResetEmail,
+  createUserWithEmailAndPassword,
+} from "firebase/auth";
+import { auth, db } from "../firebase";
 import { ref, get } from "firebase/database";
-
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const { loginWithEmail, loginWithGoogleChecked } = useAuth();
 
-  /* ---------------- LOGIN FIELDS ---------------- */
+  /* ---------------- MODE ---------------- */
+  const [isRegister, setIsRegister] = useState(false);
+
+  /* ---------------- FIELDS ---------------- */
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  /* ---------------- UI STATE ---------------- */
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   /* ---------------- FORGOT PASSWORD ---------------- */
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
 
-  /* ---------------- FORGOT EMAIL (SRNO LOOKUP) ---------------- */
+  /* ---------------- FORGOT EMAIL ---------------- */
   const [showForgotEmail, setShowForgotEmail] = useState(false);
   const [srno, setSrno] = useState("");
   const [emailList, setEmailList] = useState([]);
-
-  /* ---------------- UI STATE ---------------- */
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
 
   /* ---------------- EMAIL LOGIN ---------------- */
   const handleEmailLogin = async (e) => {
@@ -53,34 +60,59 @@ export default function LoginPage() {
     setError("");
 
     try {
+      setLoading(true);
       await loginWithEmail(email, password);
       navigate("/");
     } catch {
       setError("Invalid email or password");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ---------------- EMAIL REGISTER (AUTO LOGIN) ---------------- */
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    setError("");
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      // ✅ Creates user AND logs in automatically
+      await createUserWithEmailAndPassword(auth, email, password);
+
+      // ✅ Go home – profile completion handled there
+      navigate("/");
+    } catch (err) {
+      console.error("Registration failed:", err);
+      setError(err.message || "Unable to create account");
+    } finally {
+      setLoading(false);
     }
   };
 
   /* ---------------- GOOGLE LOGIN ---------------- */
   const handleGoogleLogin = async () => {
-  setError("");
-  setLoading(true);
+    setError("");
+    setLoading(true);
 
-  try {
-    await loginWithGoogleChecked();
+    try {
+      await loginWithGoogleChecked();
+      navigate("/");
+    } catch (err) {
+      console.error("Google login failed:", err);
+      setError("Google login failed");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    // ✅ ALWAYS go home
-    // Home/Register pages decide what happens next
-    navigate("/");
-  } catch (err) {
-    console.error("Google login failed:", err);
-    setError("Google login failed");
-  }
-
-  setLoading(false);
-};
-
-
-  /* ---------------- FORGOT PASSWORD ACTION ---------------- */
+  /* ---------------- FORGOT PASSWORD ---------------- */
   const handleForgotPassword = async () => {
     if (!forgotEmail) {
       setError("Please enter your email");
@@ -97,12 +129,8 @@ export default function LoginPage() {
     }
   };
 
-  /* ---------------- FORGOT EMAIL ACTION ---------------- */
-/* ---------------- FORGOT EMAIL ACTION (FIXED) ---------------- */
-
-
-
-const findEmailsBySrNo = async () => {
+  /* ---------------- FORGOT EMAIL (SRNO LOOKUP) ---------------- */
+ const findEmailsBySrNo = async () => {
   setError("");
   setEmailList([]);
   setLoading(true);
@@ -114,29 +142,48 @@ const findEmailsBySrNo = async () => {
   }
 
   try {
-    const snap = await get(ref(db, `publicUserIndex/${srno}`));
+    // 1️⃣ Get editor UIDs
+    const editorsSnap = await get(
+      ref(db, `families/${srno}/info/editorEmails`)
+    );
 
-    console.log("Forgot email lookup snapshot:", snap.val());
-
-    if (!snap.exists()) {
-      setError("No email records found for this family");
+    if (!editorsSnap.exists()) {
+      setError("No editor found for this family");
       setLoading(false);
       return;
     }
 
-    const list = Object.values(snap.val()).map((u) => ({
-      maskedEmail: u.maskedEmail,
-      provider: u.provider,
+    const editorUids = Object.keys(editorsSnap.val());
+
+    // 2️⃣ Fetch editor emails from users
+    const emailPromises = editorUids.map(async (uid) => {
+      const emailSnap = await get(ref(db, `users/${uid}/email`));
+      return emailSnap.exists() ? emailSnap.val() : null;
+    });
+
+    const emails = (await Promise.all(emailPromises)).filter(Boolean);
+
+    if (emails.length === 0) {
+      setError("No email available");
+      setLoading(false);
+      return;
+    }
+
+    // 3️⃣ Mask emails for display
+    const list = emails.map((email) => ({
+      maskedEmail: email.replace(/(.{2}).+(@.+)/, "$1***$2"),
+      provider: "family editor",
     }));
 
     setEmailList(list);
   } catch (err) {
-    console.error("Forgot email lookup failed:", err);
-    setError("Unable to fetch email list");
+    console.error(err);
+    setError("Unable to fetch email");
   }
 
   setLoading(false);
 };
+
 
 
   /* ============================ */
@@ -144,18 +191,23 @@ const findEmailsBySrNo = async () => {
   /* ============================ */
 
   return (
-     <div className="min-h-screen bg-gray-100 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center px-4">
       <div className="bg-white rounded-lg shadow w-full max-w-sm p-6">
 
-        <h1 className="text-2xl font-bold text-center mb-6">Login</h1>
+        <h1 className="text-2xl font-bold text-center mb-6">
+          {isRegister ? "Create Account" : "Login"}
+        </h1>
 
         {error && (
-          <p className="text-red-500 text-sm text-center mb-4">{error}</p>
+          <p className="text-red-500 text-sm text-center mb-4">
+            {error}
+          </p>
         )}
 
         {/* GOOGLE LOGIN */}
         <button
           onClick={handleGoogleLogin}
+          disabled={loading}
           className="w-full h-11 bg-red-500 text-white rounded font-medium mb-4"
         >
           Continue with Google
@@ -168,8 +220,11 @@ const findEmailsBySrNo = async () => {
           <div className="flex-1 h-px bg-gray-300" />
         </div>
 
-        {/* EMAIL LOGIN */}
-        <form onSubmit={handleEmailLogin} className="space-y-3">
+        {/* LOGIN / REGISTER FORM */}
+        <form
+          onSubmit={isRegister ? handleRegister : handleEmailLogin}
+          className="space-y-3"
+        >
           <input
             className="w-full border rounded px-3 py-2.5"
             placeholder="Email"
@@ -188,41 +243,73 @@ const findEmailsBySrNo = async () => {
             required
           />
 
-          <div className="flex justify-between text-sm">
-            <button
-              type="button"
-              onClick={() => setShowForgotPassword(true)}
-              className="text-blue-600"
-            >
-              Forgot Password?
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowForgotEmail(true)}
-              className="text-blue-600"
-            >
-              Forgot Email?
-            </button>
-          </div>
+          {isRegister && (
+            <input
+              className="w-full border rounded px-3 py-2.5"
+              placeholder="Confirm Password"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+            />
+          )}
+
+          {!isRegister && (
+            <div className="flex justify-between text-sm">
+              <button
+                type="button"
+                onClick={() => setShowForgotPassword(true)}
+                className="text-blue-600"
+              >
+                Forgot Password?
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowForgotEmail(true)}
+                className="text-blue-600"
+              >
+                Forgot Email?
+              </button>
+            </div>
+          )}
 
           <button
             type="submit"
+            disabled={loading}
             className="w-full h-11 bg-blue-600 text-white rounded font-medium"
           >
-            Login
+            {loading
+              ? "Please wait…"
+              : isRegister
+              ? "Create Account"
+              : "Login"}
           </button>
         </form>
 
-    <p className="text-center text-sm mt-5 text-gray-600">
-  New user?{" "}
-  <Link
-    to="/register-email"
-    className="text-blue-600 font-medium"
-  >
-    Create account
-  </Link>
-</p>
-
+        {/* TOGGLE MODE */}
+        <p className="text-center text-sm mt-5 text-gray-600">
+          {isRegister ? (
+            <>
+              Already have an account?{" "}
+              <button
+                onClick={() => setIsRegister(false)}
+                className="text-blue-600 font-medium"
+              >
+                Login
+              </button>
+            </>
+          ) : (
+            <>
+              New user?{" "}
+              <button
+                onClick={() => setIsRegister(true)}
+                className="text-blue-600 font-medium"
+              >
+                Create account
+              </button>
+            </>
+          )}
+        </p>
 
         {/* FORGOT PASSWORD */}
         {showForgotPassword && (
@@ -259,8 +346,8 @@ const findEmailsBySrNo = async () => {
             />
             <button
               onClick={findEmailsBySrNo}
-              className="w-full h-10 bg-green-600 text-white rounded"
               disabled={loading}
+              className="w-full h-10 bg-green-600 text-white rounded"
             >
               {loading ? "Searching…" : "Find Email"}
             </button>
@@ -268,7 +355,9 @@ const findEmailsBySrNo = async () => {
             {emailList.length > 0 && (
               <div className="text-sm bg-white border rounded p-2 space-y-1">
                 {emailList.map((e, i) => (
-                  <div key={i}>📧 {e.maskedEmail} ({e.provider})</div>
+                  <div key={i}>
+                    📧 {e.maskedEmail} ({e.provider})
+                  </div>
                 ))}
               </div>
             )}
@@ -281,7 +370,6 @@ const findEmailsBySrNo = async () => {
             </button>
           </div>
         )}
-
       </div>
     </div>
   );

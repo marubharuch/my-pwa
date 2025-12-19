@@ -9,12 +9,13 @@
  * ✅ No direct /users reads
  * ✅ Optimistic UI via localPending
  * ✅ Uses familyId consistently
+ * ✅ Atomic RTDB updates only
  */
 
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase";
-import { ref, get, set, update, remove } from "firebase/database";
+import { ref, get, update } from "firebase/database";
 import { useNavigate } from "react-router-dom";
 
 export default function JoinFamilyPage() {
@@ -27,7 +28,7 @@ export default function JoinFamilyPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // ✅ optimistic pending state
+  // optimistic pending state
   const [localPending, setLocalPending] = useState(null);
 
   /* ---------------- DERIVED STATE ---------------- */
@@ -36,21 +37,29 @@ export default function JoinFamilyPage() {
 
   /* ---------------- LOAD FAMILY LABEL (LIGHT READ) ---------------- */
   useEffect(() => {
+    let alive = true;
+
     if (!pending?.familyId) return;
 
     get(ref(db, `families/${pending.familyId}/info`)).then((snap) => {
+      if (!alive) return;
       if (snap.exists()) {
         const info = snap.val();
         setFamilyLabel(info.currentCity || info.nativeCity || "");
       }
     });
+
+    return () => {
+      alive = false;
+    };
   }, [pending]);
 
   /* ---------------- SEND JOIN REQUEST ---------------- */
   const sendRequest = async () => {
     setError("");
 
-    if (!familyIdInput.trim()) {
+    const fid = familyIdInput.trim();
+    if (!fid) {
       setError("Please enter Family Number");
       return;
     }
@@ -58,26 +67,29 @@ export default function JoinFamilyPage() {
     try {
       setBusy(true);
 
-      const famSnap = await get(ref(db, `families/${familyIdInput}`));
+      // validate family exists
+      const famSnap = await get(ref(db, `families/${fid}`));
       if (!famSnap.exists()) {
         setError("Family not found");
-        setBusy(false);
         return;
       }
 
-      const payload = {
-        familyId: familyIdInput.trim(),
-        requestedAt: Date.now(),
+      const uid = user.uid;
+      const requestedAt = Date.now();
+
+      // atomic multi-path update
+      const updates = {};
+      updates[`families/${fid}/pendingRequests/${uid}/requestedAt`] =
+        requestedAt;
+      updates[`users/${uid}/pendingJoin`] = {
+        familyId: fid,
+        requestedAt,
       };
 
-      await set(ref(db, `users/${user.uid}/pendingJoin`), payload);
-      await set(
-        ref(db, `families/${familyIdInput}/pendingRequests/${user.uid}`),
-        { requestedAt: payload.requestedAt }
-      );
+      await update(ref(db), updates);
 
-      // ✅ IMMEDIATE UI FEEDBACK
-      setLocalPending(payload);
+      // optimistic UI
+      setLocalPending({ familyId: fid, requestedAt });
       setFamilyIdInput("");
     } catch (err) {
       console.error(err);
@@ -94,12 +106,15 @@ export default function JoinFamilyPage() {
     try {
       setBusy(true);
 
-      await remove(ref(db, `users/${user.uid}/pendingJoin`));
-      await remove(
-        ref(db, `families/${pending.familyId}/pendingRequests/${user.uid}`)
-      );
+      const uid = user.uid;
+      const fid = pending.familyId;
 
-      // ✅ clear optimistic state
+      const updates = {};
+      updates[`users/${uid}/pendingJoin`] = null;
+      updates[`families/${fid}/pendingRequests/${uid}`] = null;
+
+      await update(ref(db), updates);
+
       setLocalPending(null);
       setFamilyLabel("");
     } catch (err) {
@@ -116,23 +131,25 @@ export default function JoinFamilyPage() {
 
     const ok = window.confirm(
       "You will leave your current family.\n\n" +
-      "• You will be hidden from members\n" +
-      "• You can join another family\n\nContinue?"
+        "• You will be hidden from members\n" +
+        "• You can join another family\n\nContinue?"
     );
     if (!ok) return;
 
     try {
       setBusy(true);
 
-      await update(ref(db, `families/${familyId}/members/${user.uid}`), {
-        active: false,
-        leftAt: Date.now(),
-      });
+      const uid = user.uid;
+      const now = Date.now();
 
-      await update(ref(db, `users/${user.uid}`), {
-        familyId: null,
-        role: userRecord.role === "admin" ? "admin" : "guest",
-      });
+      const updates = {};
+      updates[`families/${familyId}/members/${uid}/active`] = false;
+      updates[`families/${familyId}/members/${uid}/leftAt`] = now;
+      updates[`users/${uid}/familyId`] = null;
+      updates[`users/${uid}/role`] =
+        userRecord.role === "admin" ? "admin" : "guest";
+
+      await update(ref(db), updates);
     } catch (err) {
       console.error(err);
       setError("Unable to disconnect family");
@@ -154,13 +171,14 @@ export default function JoinFamilyPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
       <div className="bg-white p-6 rounded shadow w-full max-w-sm">
-
         <h2 className="text-2xl font-bold text-center mb-4">
           Join Family
         </h2>
 
         {error && (
-          <p className="text-red-500 text-sm text-center mb-3">{error}</p>
+          <p className="text-red-500 text-sm text-center mb-3">
+            {error}
+          </p>
         )}
 
         {/* STATE 1 — ALREADY IN FAMILY */}
