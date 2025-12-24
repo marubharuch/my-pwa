@@ -1,24 +1,3 @@
-// src/pages/LoginPage.jsx
-
-/**
- * 🔐 LOGIN + REGISTER (MERGED) – FINAL
- *
- * FEATURES:
- * ------------------------------------------------
- * ✅ Email + Password login
- * ✅ Email + Password + Confirm Password registration
- * ✅ Auto-login after registration
- * ✅ Google login
- * ✅ Forgot Password
- * ✅ Forgot Email (Family SrNo lookup)
- *
- * IMPORTANT:
- * ------------------------------------------------
- * ❌ NO /users writes here
- * ❌ Auth only
- * ✅ Profile completion handled on HomePage
- */
-
 import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
@@ -35,6 +14,7 @@ export default function LoginPage() {
 
   /* ---------------- MODE ---------------- */
   const [isRegister, setIsRegister] = useState(false);
+  const [useEmailAuth, setUseEmailAuth] = useState(false); // ✅ NEW
 
   /* ---------------- FIELDS ---------------- */
   const [email, setEmail] = useState("");
@@ -70,7 +50,7 @@ export default function LoginPage() {
     }
   };
 
-  /* ---------------- EMAIL REGISTER (AUTO LOGIN) ---------------- */
+  /* ---------------- EMAIL REGISTER ---------------- */
   const handleRegister = async (e) => {
     e.preventDefault();
     setError("");
@@ -82,15 +62,11 @@ export default function LoginPage() {
 
     try {
       setLoading(true);
-
-      // ✅ Creates user AND logs in automatically
       await createUserWithEmailAndPassword(auth, email, password);
-
-      // ✅ Go home – profile completion handled there
       navigate("/");
     } catch (err) {
-      console.error("Registration failed:", err);
-      setError(err.message || "Unable to create account");
+      console.error(err);
+      setError("Unable to create account");
     } finally {
       setLoading(false);
     }
@@ -104,8 +80,7 @@ export default function LoginPage() {
     try {
       await loginWithGoogleChecked();
       navigate("/");
-    } catch (err) {
-      console.error("Google login failed:", err);
+    } catch {
       setError("Google login failed");
     } finally {
       setLoading(false);
@@ -129,73 +104,52 @@ export default function LoginPage() {
     }
   };
 
-  /* ---------------- FORGOT EMAIL (SRNO LOOKUP) ---------------- */
- const findEmailsBySrNo = async () => {
-  setError("");
-  setEmailList([]);
-  setLoading(true);
+  /* ---------------- FORGOT EMAIL ---------------- */
+  const findEmailsBySrNo = async () => {
+    setError("");
+    setEmailList([]);
+    setLoading(true);
 
-  if (!srno) {
-    setError("Enter Family Serial Number");
+    try {
+      const snap = await get(
+        ref(db, `families/${srno}/info/editorEmails`)
+      );
+
+      if (!snap.exists()) {
+        setError("No email found for this family number");
+        setLoading(false);
+        return;
+      }
+
+      const uids = Object.keys(snap.val());
+
+      const emails = await Promise.all(
+        uids.map(async (uid) => {
+          const eSnap = await get(ref(db, `users/${uid}/email`));
+          return eSnap.exists() ? eSnap.val() : null;
+        })
+      );
+
+      setEmailList(
+        emails.filter(Boolean).map((email) => ({
+          maskedEmail: email.replace(/(.{2}).+(@.+)/, "$1***$2"),
+        }))
+      );
+    } catch {
+      setError("Unable to fetch email");
+    }
+
     setLoading(false);
-    return;
-  }
+  };
 
-  try {
-    // 1️⃣ Get editor UIDs
-    const editorsSnap = await get(
-      ref(db, `families/${srno}/info/editorEmails`)
-    );
-
-    if (!editorsSnap.exists()) {
-      setError("No editor found for this family");
-      setLoading(false);
-      return;
-    }
-
-    const editorUids = Object.keys(editorsSnap.val());
-
-    // 2️⃣ Fetch editor emails from users
-    const emailPromises = editorUids.map(async (uid) => {
-      const emailSnap = await get(ref(db, `users/${uid}/email`));
-      return emailSnap.exists() ? emailSnap.val() : null;
-    });
-
-    const emails = (await Promise.all(emailPromises)).filter(Boolean);
-
-    if (emails.length === 0) {
-      setError("No email available");
-      setLoading(false);
-      return;
-    }
-
-    // 3️⃣ Mask emails for display
-    const list = emails.map((email) => ({
-      maskedEmail: email.replace(/(.{2}).+(@.+)/, "$1***$2"),
-      provider: "family editor",
-    }));
-
-    setEmailList(list);
-  } catch (err) {
-    console.error(err);
-    setError("Unable to fetch email");
-  }
-
-  setLoading(false);
-};
-
-
-
-  /* ============================ */
-  /* ============ UI ============ */
-  /* ============================ */
+  /* ============================ UI ============================ */
 
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center px-4">
       <div className="bg-white rounded-lg shadow w-full max-w-sm p-6">
 
         <h1 className="text-2xl font-bold text-center mb-6">
-          {isRegister ? "Create Account" : "Login"}
+          {isRegister ? "Create Account" : "Registration/Sign In"}
         </h1>
 
         {error && (
@@ -204,112 +158,138 @@ export default function LoginPage() {
           </p>
         )}
 
-        {/* GOOGLE LOGIN */}
-        <button
-          onClick={handleGoogleLogin}
-          disabled={loading}
-          className="w-full h-11 bg-red-500 text-white rounded font-medium mb-4"
-        >
-          Continue with Google
-        </button>
+        {/* ================= GOOGLE MODE ================= */}
+        {!useEmailAuth && (
+  <>
+    <button
+      onClick={handleGoogleLogin}
+      disabled={loading}
+      className="w-full h-11 bg-red-500 text-white rounded font-medium"
+    >
+      Continue with Google
+    </button>
 
-        {/* DIVIDER */}
-        <div className="flex items-center mb-4">
-          <div className="flex-1 h-px bg-gray-300" />
-          <span className="mx-3 text-xs text-gray-500">OR</span>
-          <div className="flex-1 h-px bg-gray-300" />
-        </div>
+    <button
+      onClick={() => setUseEmailAuth(true)}
+      className="w-full mt-4 text-sm text-blue-600"
+    >
+      Use email & password instead
+    </button>
 
-        {/* LOGIN / REGISTER FORM */}
-        <form
-          onSubmit={isRegister ? handleRegister : handleEmailLogin}
-          className="space-y-3"
-        >
-          <input
-            className="w-full border rounded px-3 py-2.5"
-            placeholder="Email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
+    {/* ✅ FORGOT EMAIL */}
+    <button
+      type="button"
+      onClick={() => setShowForgotEmail(true)}
+      className="w-full mt-3 text-sm text-blue-600"
+    >
+      Forgot email?
+    </button>
+  </>
+)}
 
-          <input
-            className="w-full border rounded px-3 py-2.5"
-            placeholder="Password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
 
-          {isRegister && (
-            <input
-              className="w-full border rounded px-3 py-2.5"
-              placeholder="Confirm Password"
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-            />
-          )}
+        {/* ================= EMAIL MODE ================= */}
+        {useEmailAuth && (
+          <>
+            <form
+              onSubmit={isRegister ? handleRegister : handleEmailLogin}
+              className="space-y-3"
+            >
+              <input
+                className="w-full border rounded px-3 py-2.5"
+                placeholder="Email address"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
 
-          {!isRegister && (
-            <div className="flex justify-between text-sm">
+              <input
+                className="w-full border rounded px-3 py-2.5"
+                placeholder="Password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+
+              {isRegister && (
+                <input
+                  className="w-full border rounded px-3 py-2.5"
+                  placeholder="Confirm password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) =>
+                    setConfirmPassword(e.target.value)
+                  }
+                  required
+                />
+              )}
+
+              {!isRegister && (
+                <div className="flex justify-between text-sm">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotPassword(true)}
+                    className="text-blue-600"
+                  >
+                    Forgot password?
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotEmail(true)}
+                    className="text-blue-600"
+                  >
+                    Forgot email?
+                  </button>
+                </div>
+              )}
+
               <button
-                type="button"
-                onClick={() => setShowForgotPassword(true)}
-                className="text-blue-600"
+                type="submit"
+                disabled={loading}
+                className="w-full h-11 bg-blue-600 text-white rounded font-medium"
               >
-                Forgot Password?
+                {loading
+                  ? "Please wait…"
+                  : isRegister
+                  ? "Create account"
+                  : "Sign in"}
               </button>
-              <button
-                type="button"
-                onClick={() => setShowForgotEmail(true)}
-                className="text-blue-600"
-              >
-                Forgot Email?
-              </button>
-            </div>
-          )}
+            </form>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full h-11 bg-blue-600 text-white rounded font-medium"
-          >
-            {loading
-              ? "Please wait…"
-              : isRegister
-              ? "Create Account"
-              : "Login"}
-          </button>
-        </form>
+            <p className="text-center text-sm mt-4">
+              {isRegister ? (
+                <>
+                  Already have an account?{" "}
+                  <button
+                    onClick={() => setIsRegister(false)}
+                    className="text-blue-600"
+                  >
+                    Sign in
+                  </button>
+                </>
+              ) : (
+                <>
+                  New here?{" "}
+                  <button
+                    onClick={() => setIsRegister(true)}
+                    className="text-blue-600"
+                  >
+                    Create account
+                  </button>
+                </>
+              )}
+            </p>
 
-        {/* TOGGLE MODE */}
-        <p className="text-center text-sm mt-5 text-gray-600">
-          {isRegister ? (
-            <>
-              Already have an account?{" "}
-              <button
-                onClick={() => setIsRegister(false)}
-                className="text-blue-600 font-medium"
-              >
-                Login
-              </button>
-            </>
-          ) : (
-            <>
-              New user?{" "}
-              <button
-                onClick={() => setIsRegister(true)}
-                className="text-blue-600 font-medium"
-              >
-                Create account
-              </button>
-            </>
-          )}
-        </p>
+            <button
+              onClick={() => setUseEmailAuth(false)}
+              className="w-full mt-4 text-sm text-gray-600"
+            >
+              Use Google instead
+            </button>
+          </>
+        )}
 
         {/* FORGOT PASSWORD */}
         {showForgotPassword && (
@@ -324,13 +304,7 @@ export default function LoginPage() {
               onClick={handleForgotPassword}
               className="w-full h-10 bg-blue-600 text-white rounded"
             >
-              Send Reset Email
-            </button>
-            <button
-              onClick={() => setShowForgotPassword(false)}
-              className="w-full text-sm text-gray-600"
-            >
-              Cancel
+              Send reset email
             </button>
           </div>
         )}
@@ -340,34 +314,22 @@ export default function LoginPage() {
           <div className="mt-6 p-4 bg-gray-50 rounded border space-y-2">
             <input
               className="w-full border rounded px-3 py-2.5"
-              placeholder="Family Serial Number"
+              placeholder="Family serial number"
               value={srno}
               onChange={(e) => setSrno(e.target.value)}
             />
             <button
               onClick={findEmailsBySrNo}
-              disabled={loading}
               className="w-full h-10 bg-green-600 text-white rounded"
             >
-              {loading ? "Searching…" : "Find Email"}
+              Find email
             </button>
 
-            {emailList.length > 0 && (
-              <div className="text-sm bg-white border rounded p-2 space-y-1">
-                {emailList.map((e, i) => (
-                  <div key={i}>
-                    📧 {e.maskedEmail} ({e.provider})
-                  </div>
-                ))}
+            {emailList.map((e, i) => (
+              <div key={i} className="text-sm">
+                📧 {e.maskedEmail}
               </div>
-            )}
-
-            <button
-              onClick={() => setShowForgotEmail(false)}
-              className="w-full text-sm text-gray-600"
-            >
-              Close
-            </button>
+            ))}
           </div>
         )}
       </div>

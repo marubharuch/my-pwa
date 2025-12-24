@@ -39,7 +39,7 @@ export default function GoogleLoginButton() {
         alt="Google"
         className="w-5 h-5"
       />
-      {loading ? "Signing in..." : "Continue with Google"}
+      {loading ? "Signing in..." : "Registration/Login  with Google"}
     </button>
   );
 }

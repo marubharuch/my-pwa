@@ -117,7 +117,7 @@ export default function FamilyDetailPage({
 
     await update(ref(db, `families/${familyId}/info`), {
       [editingField]:
-        ["currentCity", "nativeCity"].includes(editingField)
+        ["currentCity", "nativeCity","samaj"].includes(editingField)
           ? toUpperText(fieldValue.trim())
           : fieldValue.trim(),
     });
@@ -205,11 +205,13 @@ export default function FamilyDetailPage({
 
       {/* FAMILY INFO */}
       <div className="bg-white p-3 rounded shadow mb-4 space-y-2">
-        {["currentCity", "nativeCity", "address"].map((field) => (
+        {["samaj","currentCity", "nativeCity", "address"].map((field) => (
           <div key={field} className="flex justify-between items-start">
             <span className="flex-1">
               {field === "currentCity" && "Current City"}
               {field === "nativeCity" && "Native City"}
+              {field === "samaj" && "Samaj"}
+
               {field === "address" && "Address"}:
               <br />
 

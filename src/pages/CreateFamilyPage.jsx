@@ -4,20 +4,27 @@ import { ref, runTransaction, set } from "firebase/database";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { toUpperText } from "../utils/textUtils";
+
 export default function CreateFamilyPage() {
   const { user, updateUserRecordCache } = useAuth();
   const navigate = useNavigate();
 
   const [currentCity, setCurrentCity] = useState("");
   const [nativeCity, setNativeCity] = useState("");
-  const [address, setAddress] = useState(""); // ✅ NEW
+  const [samaj, setSamaj] = useState("");
+  const [address, setAddress] = useState("");
+  const [isMarriedOutside, setIsMarriedOutside] = useState(false); // default NO
   const [loading, setLoading] = useState(false);
-const [editingField, setEditingField] = useState(null); // "currentCity" | "nativeCity" | "address"
-const [editValue, setEditValue] = useState("");
 
   const handleCreate = async () => {
     if (!currentCity.trim()) {
       alert("Current city is required");
+      return;
+    }
+
+    // ✅ Samaj validation ONLY if married outside
+    if (isMarriedOutside && !samaj.trim()) {
+      alert("Please enter Samaj name");
       return;
     }
 
@@ -41,9 +48,12 @@ const [editValue, setEditValue] = useState("");
       /* 2️⃣ Create family */
       await set(ref(db, `families/${familyId}`), {
         info: {
-          currentCity: currentCity.trim(),
-          nativeCity: nativeCity.trim(),
-          address: address.trim(), // ✅ STORED HERE
+          currentCity: toUpperText(currentCity.trim()),
+          nativeCity: toUpperText(nativeCity.trim()),
+          samaj: isMarriedOutside
+            ? toUpperText(samaj.trim())
+            : "", // ✅ store empty if No
+          address: address.trim(),
           editorEmails: {
             [user.uid]: true,
           },
@@ -53,12 +63,11 @@ const [editValue, setEditValue] = useState("");
           createdAt: now,
           updatedAt: now,
         },
-        members: {}, // intentionally empty
+        members: {},
       });
 
       /* 3️⃣ Link user */
       await set(ref(db, `users/${user.uid}/familyId`), familyId);
-
       updateUserRecordCache({ familyId });
 
       /* 4️⃣ Go to family page */
@@ -71,28 +80,71 @@ const [editValue, setEditValue] = useState("");
     }
   };
 
-  
-
   return (
     <div className="p-4 max-w-md mx-auto space-y-3">
       <h1 className="text-xl font-bold">Create Family</h1>
 
- <input
-  placeholder="Current City *"
-  value={currentCity}
-  onChange={(e) => setCurrentCity(toUpperText(e.target.value))}
-  className="w-full border p-2 rounded"
-/>
+      <input
+        placeholder="Current City *"
+        value={currentCity}
+        onChange={(e) => setCurrentCity(toUpperText(e.target.value))}
+        className="w-full border p-2 rounded"
+      />
 
+      <input
+        placeholder="Native City"
+        value={nativeCity}
+        onChange={(e) => setNativeCity(toUpperText(e.target.value))}
+        className="w-full border p-2 rounded"
+      />
 
-    <input
-  placeholder="Native City"
-  value={nativeCity}
-  onChange={(e) => setNativeCity(toUpperText(e.target.value))}
-  className="w-full border p-2 rounded"
-/>
+      {/* ✅ OUTSIDE DAUGHTER / SAMAJ SECTION */}
+      <div className="p-3 border rounded bg-blue-50 space-y-3">
+        <label className="block text-sm font-semibold">
+          Are you a daughter married outside the VISA OSWAL – BVPV?
+        </label>
 
-      {/* ✅ ADDRESS */}
+        <div className="flex gap-6">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="marriedOutside"
+              checked={isMarriedOutside === true}
+              onChange={() => setIsMarriedOutside(true)}
+            />
+            Yes
+          </label>
+
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="marriedOutside"
+              checked={isMarriedOutside === false}
+              onChange={() => {
+                setIsMarriedOutside(false);
+                setSamaj("");
+              }}
+            />
+            No
+          </label>
+        </div>
+
+        {isMarriedOutside && (
+          <div className="mt-2">
+            <input
+              placeholder="Enter Samaj Name *"
+              value={samaj}
+              onChange={(e) => setSamaj(toUpperText(e.target.value))}
+              className="w-full border p-2 rounded bg-white border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <p className="text-xs text-blue-600 mt-1 italic">
+              Please specify the community name.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* ADDRESS */}
       <textarea
         placeholder="Address (House no, society, area)"
         value={address}

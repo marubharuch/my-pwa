@@ -2,10 +2,9 @@
  * 🏠 FAMILY EDIT FORM – UNIFIED (CREATE + EDIT)
  *
  * ✅ Same form for USER & ADMIN
- * ✅ First member mandatory
- * ✅ City & Native forced to UPPERCASE
+ * ✅ City, Native & Samaj forced to UPPERCASE
  * ✅ Admin-created families tracked
- * ✅ User linked ONLY when required
+ * ❌ Member creation REMOVED (handled elsewhere)
  */
 
 import React, { useState } from "react";
@@ -13,7 +12,6 @@ import { db } from "../firebase";
 import { ref, set, update, runTransaction } from "firebase/database";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
-import MemberForm from "./MemberForm";
 
 /* ---------- HELPERS ---------- */
 const toUpper = (v = "") => v.trim().toUpperCase();
@@ -21,34 +19,29 @@ const toUpper = (v = "") => v.trim().toUpperCase();
 export default function FamilyEditForm({
   mode = "create",
   familyData = null,
-  linkUser = true, // 👈 IMPORTANT (admin will pass false)
+  linkUser = true, // admin will pass false
+  onClose,
 }) {
   const { user, userRecord, updateUserRecordCache } = useAuth();
   const navigate = useNavigate();
+
+  console.log("Rendering FamilyEditForm");
 
   /* ---------------- FAMILY INFO ---------------- */
   const [family, setFamily] = useState({
     currentCity: familyData?.info?.currentCity || "",
     nativeCity: familyData?.info?.nativeCity || "",
+    samaj: familyData?.info?.samaj || "",
     address: familyData?.info?.address || "",
   });
 
-  /* ---------------- FIRST MEMBER ---------------- */
-  const [firstMember, setFirstMember] = useState(
-    familyData?.members
-      ? Object.values(familyData.members)[0]
-      : null
-  );
-
-  const [memberFormOpen, setMemberFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
   /* ---------------- VALIDATION ---------------- */
   const validate = () => {
     if (!family.currentCity) return "Current city is required";
+   // if (!family.samaj) return "Samaj is required";
     if (!family.address.trim()) return "Family address is required";
-    if (!firstMember) return "Please add first member";
-    if (!firstMember.name) return "First member name is required";
     return null;
   };
 
@@ -72,7 +65,7 @@ export default function FamilyEditForm({
     let familyId;
 
     try {
-      /* 1️⃣ GENERATE FAMILY ID (SAFE) */
+      /* 1️⃣ GENERATE FAMILY ID (CREATE ONLY) */
       if (mode === "create") {
         const result = await runTransaction(
           ref(db, "master/nextFamilySrno"),
@@ -94,6 +87,7 @@ export default function FamilyEditForm({
           info: {
             currentCity: toUpper(family.currentCity),
             nativeCity: toUpper(family.nativeCity),
+            samaj: toUpper(family.samaj),
             address: family.address.trim(),
             editorEmails: { [user.uid]: true },
           },
@@ -103,13 +97,14 @@ export default function FamilyEditForm({
             createdVia: userRecord.role === "admin" ? "admin" : "self",
             createdAt: now,
             updatedAt: now,
-            membersUpdatedAt: now,
           },
+          members: {},
         });
       } else {
         await update(ref(db, `families/${familyId}/info`), {
           currentCity: toUpper(family.currentCity),
           nativeCity: toUpper(family.nativeCity),
+          samaj: toUpper(family.samaj),
           address: family.address.trim(),
         });
 
@@ -118,26 +113,7 @@ export default function FamilyEditForm({
         });
       }
 
-      /* 3️⃣ WRITE FIRST MEMBER (CREATE ONLY) */
-      if (mode === "create") {
-        const memberId = Date.now();
-
-        await set(ref(db, `families/${familyId}/members/${memberId}`), {
-          ...firstMember,
-          id: memberId,
-          active: true,
-          createdAt: now,
-          updatedAt: now,
-          createdBy: user.uid,
-        });
-
-        await update(ref(db, `families/${familyId}/meta`), {
-          updatedAt: now,
-          membersUpdatedAt: now,
-        });
-      }
-
-      /* 4️⃣ LINK USER (ONLY IF ALLOWED) */
+      /* 3️⃣ LINK USER (ONLY IF ALLOWED) */
       if (mode === "create" && linkUser) {
         await update(ref(db, `users/${user.uid}`), {
           familyId,
@@ -145,13 +121,15 @@ export default function FamilyEditForm({
         });
 
         updateUserRecordCache({ familyId, role: "member" });
+      }
+
+      /* 4️⃣ NAVIGATION / CLOSE */
+      if (mode === "create") {
+        // ✅ BOTH USER & ADMIN GO TO FAMILY PAGE
         navigate(`/family/${familyId}`);
       } else {
-        alert(
-          mode === "create"
-            ? "Family created successfully"
-            : "Family updated successfully"
-        );
+        alert("Family updated successfully");
+        onClose?.();
       }
     } catch (e) {
       console.error("Family save failed", e);
@@ -165,7 +143,11 @@ export default function FamilyEditForm({
      UI
   ========================= */
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 p-4">
+      <h2 className="text-lg font-semibold">
+        {mode === "create" ? "Create Family" : "Edit Family"}
+      </h2>
+
       <input
         className="border p-2 w-full"
         placeholder="Current City *"
@@ -184,6 +166,15 @@ export default function FamilyEditForm({
         }
       />
 
+      <input
+        className="border p-2 w-full"
+        placeholder="Samaj *"
+        value={family.samaj}
+        onChange={(e) =>
+          setFamily({ ...family, samaj: toUpper(e.target.value) })
+        }
+      />
+
       <textarea
         className="border p-2 w-full"
         placeholder="Family Address (House no, society, area)"
@@ -193,58 +184,29 @@ export default function FamilyEditForm({
         }
       />
 
-      {!firstMember && !memberFormOpen && (
-        <button
-          type="button"
-          onClick={() => {
-            if (!family.currentCity || !family.address.trim()) {
-              alert("Please enter city and address first");
-              return;
-            }
-            setMemberFormOpen(true);
-          }}
-          className="w-full bg-gray-700 text-white p-2 rounded"
-        >
-          + Add First Member
-        </button>
-      )}
-
-      {firstMember && !memberFormOpen && (
-        <div className="p-3 border rounded bg-gray-50 flex justify-between">
-          <div>
-            <b>First Member:</b> {firstMember.name}
-          </div>
+      <div className="flex gap-2">
+        {onClose && (
           <button
             type="button"
-            className="text-blue-600 text-sm"
-            onClick={() => setMemberFormOpen(true)}
+            onClick={onClose}
+            className="flex-1 border p-2 rounded"
           >
-            Edit
+            Cancel
           </button>
-        </div>
-      )}
+        )}
 
-      <MemberForm
-        open={memberFormOpen}
-        initial={firstMember}
-        onClose={() => setMemberFormOpen(false)}
-        onSave={(data) => {
-          setFirstMember(data);
-          setMemberFormOpen(false);
-        }}
-      />
-
-      <button
-        onClick={handleSubmit}
-        disabled={saving || !firstMember}
-        className="bg-blue-600 text-white p-2 rounded w-full disabled:opacity-50"
-      >
-        {saving
-          ? "Saving..."
-          : mode === "create"
-          ? "Create Family"
-          : "Update Family"}
-      </button>
+        <button
+          onClick={handleSubmit}
+          disabled={saving}
+          className="flex-1 bg-blue-600 text-white p-2 rounded disabled:opacity-50"
+        >
+          {saving
+            ? "Saving..."
+            : mode === "create"
+            ? "Create Family"
+            : "Update Family"}
+        </button>
+      </div>
     </div>
   );
 }

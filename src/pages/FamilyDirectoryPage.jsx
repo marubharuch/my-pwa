@@ -26,6 +26,7 @@ import {
 } from "react-icons/fa";
 
 import FamilyDetailPage from "./FamilyDetailPage";
+
 export default function FamilyDirectoryPage() {
   /* ================= DATA ================= */
   const { families, loading, syncing, refresh } = useFamilies();
@@ -282,59 +283,51 @@ export default function FamilyDirectoryPage() {
           <FaTimes />
         </button>
       </div>
-{/* ================= SEARCH MODE ================= */}
-{searchMode &&
-  searchedFamilies.map((family) => {
-    const members = Object.values(family.members || {}).filter(
-      (m) => m.active !== false
-    );
 
-    return (
-      <div
-        key={family.familyId}
-        className="bg-white border rounded p-1 mb-1"
-      >
-        <div
-          className={`text-sm font-semibold border-b pb-1 mb-1 ${
-            adminMode ? "cursor-pointer text-blue-700" : ""
-          }`}
-          onClick={() => {
-            if (adminMode) setEditFamily(family);
-          }}
-        >
-          #{family.familyId} {family.info.currentCity} (
-          {family.info.nativeCity})
-        </div>
+      {/* ================= SEARCH MODE ================= */}
+      {searchMode &&
+        searchedFamilies.map((family) => {
+          const members = Object.values(family.members || {}).filter(
+            (m) => m.active !== false
+          );
 
-        {members.map((m) => (
-          <div key={m.id} className="flex items-center gap-3 p-1">
-            <FaPhone />
-
-            <span
-              className={getMemberClass(m)}
-              onClick={() => {
-                if (adminMode)
-                  setEditMember({
-                    member: m,
-                    familyId: family.familyId,
-                  });
-              }}
-              {...(!adminMode ? attachLongPressHandlers(m) : {})}
+          return (
+            <div
+              key={family.familyId}
+              className="bg-white border rounded p-1 mb-1"
             >
-              {renderName(m.name)}
-            </span>
+              <div className="flex justify-between items-center text-sm font-semibold border-b pb-1 mb-1">
+                <span>
+                  #{family.familyId} {family.info.currentCity} (
+                  {family.info.nativeCity})
+                </span>
+                {family.info?.samaj && (
+                  <span className="text-xs text-gray-600">
+                    Samaj: {family.info.samaj}
+                  </span>
+                )}
+              </div>
 
-            <FaWhatsapp
-              className="cursor-pointer"
-              onClick={() =>
-                window.open(`https://wa.me/91${m.mobile}`, "_blank")
-              }
-            />
-          </div>
-        ))}
-      </div>
-    );
-  })}
+              {members.map((m) => (
+                <div key={m.id} className="flex items-center gap-3 p-1">
+                  <FaPhone />
+                  <span
+                    className={getMemberClass(m)}
+                    {...(!adminMode ? attachLongPressHandlers(m) : {})}
+                  >
+                    {renderName(m.name)}
+                  </span>
+                  <FaWhatsapp
+                    className="cursor-pointer"
+                    onClick={() =>
+                      window.open(`https://wa.me/91${m.mobile}`, "_blank")
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          );
+        })}
 
       {/* ================= GROUP MODE ================= */}
       {!searchMode &&
@@ -348,24 +341,25 @@ export default function FamilyDirectoryPage() {
                   key={family.familyId}
                   className="bg-white border rounded p-1 mb-1"
                 >
-                  {/* FAMILY HEADER – ADMIN EDIT ONLY */}
                   <div
-                    className={`text-sm font-semibold border-b pb-1 mb-1 ${
-                      adminMode ? "cursor-pointer text-blue-700" : ""
-                    }`}
-                    onClick={() => {
-                      if (adminMode) setEditFamily(family);
-                    }}
+                    className="flex justify-between items-center text-sm font-semibold border-b pb-1 mb-1"
+                    onClick={() => adminMode && setEditFamily(family)}
                   >
-                    #{family.familyId} {family.info.currentCity} (
-                    {family.info.nativeCity})
+                    <span>
+                      #{family.familyId} {family.info.currentCity} (
+                      {family.info.nativeCity})
+                    </span>
+                    {family.info?.samaj && (
+                      <span className="text-xs text-gray-600">
+                        Samaj: {family.info.samaj}
+                      </span>
+                    )}
                   </div>
 
                   {[...primary, ...(expanded[family.familyId] ? extra : [])].map(
                     (m, idx) => (
                       <div key={m.id} className="flex items-center gap-3 p-1">
                         <FaPhone />
-
                         <span
                           className={getMemberClass(m)}
                           {...(!adminMode
@@ -374,7 +368,6 @@ export default function FamilyDirectoryPage() {
                         >
                           {renderName(m.name)}
                         </span>
-
                         <FaWhatsapp
                           className="cursor-pointer"
                           onClick={() =>
@@ -384,7 +377,6 @@ export default function FamilyDirectoryPage() {
                             )
                           }
                         />
-
                         {extra.length > 0 && idx === 0 && (
                           <button
                             onClick={() =>
@@ -411,7 +403,7 @@ export default function FamilyDirectoryPage() {
           </div>
         ))}
 
-      {/* ================= MEMBER INFO TOOLTIP (USER MODE) ================= */}
+      {/* ================= MEMBER INFO TOOLTIP ================= */}
       {!adminMode && infoPopup?.member && (
         <div
           className="fixed inset-0 z-50"
@@ -436,45 +428,30 @@ export default function FamilyDirectoryPage() {
             {renderInfoRow("🎂", "Birthdate", infoPopup.member.birthdate)}
             {renderInfoRow("🎓", "Education", infoPopup.member.education)}
             {renderInfoRow("💼", "Occupation", infoPopup.member.occupation)}
-            {renderInfoRow(
-              "🏡",
-              "Piyar / Mayaka",
-              infoPopup.member.piyarDetails
-            )}
-            {renderInfoRow(
-              "📍",
-              "Staying At",
-              infoPopup.member.stayAway
-                ? infoPopup.member.stayCity
-                : null
-            )}
           </div>
         </div>
       )}
 
       {/* ================= ADMIN FAMILY EDIT MODAL ================= */}
-  {editFamily && (
-  <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
-    <div className="bg-white w-full max-w-md max-h-[90vh] overflow-auto rounded-lg shadow-lg">
-     <div className="flex justify-end p-2">
-  <button
-    onClick={() => setEditFamily(null)}
-    className="text-xl text-gray-500 hover:text-black"
-    aria-label="Close"
-  >
-    ✕
-  </button>
-</div>
+      {editFamily && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
+          <div className="bg-white w-full max-w-md max-h-[90vh] overflow-auto rounded-lg shadow-lg">
+            <div className="flex justify-end p-2">
+              <button
+                onClick={() => setEditFamily(null)}
+                className="text-xl text-gray-500 hover:text-black"
+              >
+                ✕
+              </button>
+            </div>
 
-      <FamilyDetailPage
-        familyId={editFamily.familyId}
-        isModal
-      />
-    </div>
-  </div>
-)}
-
-
+            <FamilyDetailPage
+              familyId={editFamily.familyId}
+              isModal
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
