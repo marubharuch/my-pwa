@@ -1,20 +1,13 @@
 // src/components/Navbar.jsx
 
 /**
- * 🧭 GLOBAL NAVBAR – MOBILE FIRST (READ-OPTIMIZED)
+ * 🧭 GLOBAL NAVBAR – FINAL
  *
- * ✅ IMPORTANT RULES (DO NOT BREAK):
+ * RULES (DO NOT BREAK):
  * ------------------------------------------------
- * - Navbar MUST NOT read from Firebase database
- * - User profile (familySrno, role) comes ONLY from AuthContext
- * - AuthContext is the SINGLE source of truth
- *
- * ✅ Allowed:
- * - useAuth().user
- * - useAuth().userRecord
- *
- * ❌ Forbidden:
- * - get(ref(db, `users/...`))
+ * - Navbar MUST NOT read from Firebase
+ * - User & role come ONLY from AuthContext
+ * - Directory (/dir) is public home
  */
 
 import React from "react";
@@ -26,6 +19,8 @@ import {
   HiUsers,
   HiUserGroup,
   HiLogout,
+  HiLogin,
+  HiShieldCheck,
 } from "react-icons/hi";
 
 export default function Navbar() {
@@ -33,6 +28,8 @@ export default function Navbar() {
   const navigate = useNavigate();
 
   const familySrno = userRecord?.familySrno;
+  const isAdmin = userRecord?.role === "admin";
+  const userName = userRecord?.name || user?.displayName || "Profile";
 
   const handleLogout = async () => {
     await logout();
@@ -43,25 +40,21 @@ export default function Navbar() {
     <nav className="bg-blue-600 fixed top-0 w-full z-50 shadow">
       <div className="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
 
-        {/* HOME ICON */}
-        <Link to="/" className="text-white text-2xl">
+        {/* HOME ICON → DIRECTORY */}
+        <Link to="/dir" className="text-white text-2xl">
           <HiHome />
         </Link>
 
-        {/* LOGO */}
-        <Link to="/" className="text-white font-semibold">
+        {/* LOGO → DIRECTORY */}
+        <Link to="/dir" className="text-white font-semibold">
           Oswal Directory
         </Link>
 
         {/* ================= MOBILE ================= */}
         <div className="flex items-center gap-5 md:hidden text-white text-[11px]">
 
-          <Link to="/dir" className="flex flex-col items-center">
-            <HiUsers className="text-xl" />
-            <span>Directory</span>
-          </Link>
-
-          {/* ✅ MY FAMILY */}
+         
+          {/* MY FAMILY */}
           {familySrno && (
             <Link
               to={`/family/${familySrno}`}
@@ -72,21 +65,35 @@ export default function Navbar() {
             </Link>
           )}
 
-          {user && (
+          {/* ADMIN */}
+          {isAdmin && (
+            <Link to="/admin" className="flex flex-col items-center">
+              <HiShieldCheck className="text-xl" />
+              <span>Admin</span>
+            </Link>
+          )}
+
+          {/* LOGIN / PROFILE */}
+          {!user ? (
+            <Link to="/login" className="flex flex-col items-center">
+              <HiLogin className="text-xl" />
+              <span>Login</span>
+            </Link>
+          ) : (
             <button
-              onClick={handleLogout}
+              onClick={() => navigate("/")}
               className="flex flex-col items-center"
             >
-              <HiLogout className="text-xl" />
-              <span>Logout</span>
+              <span className="text-xs font-semibold truncate max-w-[60px]">
+                {userName}
+              </span>
             </button>
           )}
         </div>
 
         {/* ================= DESKTOP ================= */}
         <div className="hidden md:flex gap-6 text-white text-sm items-center">
-          <Link to="/">Home</Link>
-          <Link to="/dir">Family List</Link>
+         
 
           {familySrno && (
             <Link to={`/family/${familySrno}`}>
@@ -94,10 +101,27 @@ export default function Navbar() {
             </Link>
           )}
 
-          {user && (
-            <button onClick={handleLogout}>
-              Logout
-            </button>
+          {isAdmin && (
+            <Link to="/admin" className="font-semibold">
+              Admin
+            </Link>
+          )}
+
+          {!user ? (
+            <Link to="/login">Login</Link>
+          ) : (
+            <>
+              <button
+                onClick={() => navigate("/")}
+                className="font-semibold"
+              >
+                {userName}
+              </button>
+
+              <button onClick={handleLogout}>
+                Logout
+              </button>
+            </>
           )}
         </div>
       </div>

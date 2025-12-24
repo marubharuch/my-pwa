@@ -24,7 +24,7 @@ export default function App() {
       <Routes>
 
         {/* PUBLIC ROUTES */}
-        <Route path="/login" element={<LoginPage />} />
+        <Route path="/login" element={<MainLayout><LoginPage /></MainLayout>} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/register-email" element={<RegisterEmailPage />} />
 
@@ -84,11 +84,11 @@ export default function App() {
 <Route
           path="/dir"
           element={
-            <ProtectedRoute>
+            
               <MainLayout>
                 <FamilyDirectoryPage/>
               </MainLayout>
-            </ProtectedRoute>
+            
           }
         />
 
