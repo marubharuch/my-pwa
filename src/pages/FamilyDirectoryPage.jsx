@@ -282,6 +282,59 @@ export default function FamilyDirectoryPage() {
           <FaTimes />
         </button>
       </div>
+{/* ================= SEARCH MODE ================= */}
+{searchMode &&
+  searchedFamilies.map((family) => {
+    const members = Object.values(family.members || {}).filter(
+      (m) => m.active !== false
+    );
+
+    return (
+      <div
+        key={family.familyId}
+        className="bg-white border rounded p-1 mb-1"
+      >
+        <div
+          className={`text-sm font-semibold border-b pb-1 mb-1 ${
+            adminMode ? "cursor-pointer text-blue-700" : ""
+          }`}
+          onClick={() => {
+            if (adminMode) setEditFamily(family);
+          }}
+        >
+          #{family.familyId} {family.info.currentCity} (
+          {family.info.nativeCity})
+        </div>
+
+        {members.map((m) => (
+          <div key={m.id} className="flex items-center gap-3 p-1">
+            <FaPhone />
+
+            <span
+              className={getMemberClass(m)}
+              onClick={() => {
+                if (adminMode)
+                  setEditMember({
+                    member: m,
+                    familyId: family.familyId,
+                  });
+              }}
+              {...(!adminMode ? attachLongPressHandlers(m) : {})}
+            >
+              {renderName(m.name)}
+            </span>
+
+            <FaWhatsapp
+              className="cursor-pointer"
+              onClick={() =>
+                window.open(`https://wa.me/91${m.mobile}`, "_blank")
+              }
+            />
+          </div>
+        ))}
+      </div>
+    );
+  })}
 
       {/* ================= GROUP MODE ================= */}
       {!searchMode &&
