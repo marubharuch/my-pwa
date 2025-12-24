@@ -18,6 +18,6 @@ const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const db = getDatabase(app);    // Realtime DB
-export const fs = getFirestore(app);   // If you use Firestore later
+export const firestore = getFirestore(app);   // If you use Firestore later
 //export const storage = getStorage(app);
 console.log("Firebase loaded:", app.name);

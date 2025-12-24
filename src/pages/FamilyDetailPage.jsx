@@ -20,17 +20,25 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { db } from "../firebase";
-import { ref, get, set, update, remove } from "firebase/database";
+import { ref, get, update, remove } from "firebase/database";
 import { useAuth } from "../context/AuthContext";
 import MemberForm from "../components/MemberForm";
 import { Link } from "react-router-dom";
+import { toUpperText } from "../utils/textUtils";
 
-export default function FamilyDetailPage() {
-  const { srno: familyId } = useParams();
+export default function FamilyDetailPage({
+  familyId: familyIdProp,
+  isModal = false,
+}) {
+  console.log("Rendering FamilyDetailPage");
+
+  const params = useParams();
+  const familyId = familyIdProp ?? params.srno;
+
   const navigate = useNavigate();
-
   const { user, userRecord, loading: authLoading } = useAuth();
   const uid = user?.uid;
+
 
   const [family, setFamily] = useState(null);
   const [members, setMembers] = useState({});
@@ -71,6 +79,32 @@ export default function FamilyDetailPage() {
       family.info?.editorEmails?.[uid] === true
     );
 
+  /* ---------------- HIDE / UNHIDE MEMBER ---------------- */
+  const toggleMemberVisibility = async (memberId, isActive) => {
+    const ok = window.confirm(
+      isActive
+        ? "Hide this member?\n\n• Member will NOT appear in directory"
+        : "Unhide this member?\n\n• Member will appear in directory"
+    );
+
+    if (!ok) return;
+
+    const now = Date.now();
+
+    await update(ref(db, `families/${familyId}/members/${memberId}`), {
+      active: !isActive,
+      updatedAt: now,
+    });
+
+    setMembers((prev) => ({
+      ...prev,
+      [memberId]: {
+        ...prev[memberId],
+        active: !isActive,
+      },
+    }));
+  };
+
   /* ---------------- INLINE EDIT ---------------- */
   const startEdit = (field) => {
     if (!isEditor) return;
@@ -82,7 +116,10 @@ export default function FamilyDetailPage() {
     const now = Date.now();
 
     await update(ref(db, `families/${familyId}/info`), {
-      [editingField]: fieldValue.trim(),
+      [editingField]:
+        ["currentCity", "nativeCity"].includes(editingField)
+          ? toUpperText(fieldValue.trim())
+          : fieldValue.trim(),
     });
 
     await update(ref(db, `families/${familyId}/meta`), {
@@ -158,18 +195,16 @@ export default function FamilyDetailPage() {
       <h2 className="text-xl font-bold mb-4">Family #{familyId}</h2>
 
       {isEditor && family.pendingRequests && (
-  <Link
-    to={`/family/${familyId}/requests`}
-    className="text-sm text-blue-600 underline"
-  >
-    Edit Requests ({Object.keys(family.pendingRequests).length})
-  </Link>
-)}
-
+        <Link
+          to={`/family/${familyId}/requests`}
+          className="text-sm text-blue-600 underline"
+        >
+          Edit Requests ({Object.keys(family.pendingRequests).length})
+        </Link>
+      )}
 
       {/* FAMILY INFO */}
       <div className="bg-white p-3 rounded shadow mb-4 space-y-2">
-
         {["currentCity", "nativeCity", "address"].map((field) => (
           <div key={field} className="flex justify-between items-start">
             <span className="flex-1">
@@ -189,22 +224,23 @@ export default function FamilyDetailPage() {
                   <input
                     className="w-full border p-2 rounded text-sm"
                     value={fieldValue}
-                    onChange={(e) => setFieldValue(e.target.value)}
+                    onChange={(e) =>
+                      setFieldValue(
+                        ["currentCity", "nativeCity"].includes(field)
+                          ? toUpperText(e.target.value)
+                          : e.target.value
+                      )
+                    }
                   />
                 )
               ) : (
-                <b className="text-sm">
-                  {family.info?.[field] || "—"}
-                </b>
+                <b className="text-sm">{family.info?.[field] || "—"}</b>
               )}
             </span>
 
-            {isEditor && (
-              editingField === field ? (
-                <button
-                  onClick={saveEdit}
-                  className="ml-2 text-green-600"
-                >
+            {isEditor &&
+              (editingField === field ? (
+                <button onClick={saveEdit} className="ml-2 text-green-600">
                   ✔
                 </button>
               ) : (
@@ -214,8 +250,7 @@ export default function FamilyDetailPage() {
                 >
                   ✏️
                 </button>
-              )
-            )}
+              ))}
           </div>
         ))}
       </div>
@@ -226,7 +261,12 @@ export default function FamilyDetailPage() {
       {visibleMembers.map(([id, m]) => (
         <div
           key={id}
-          className="bg-white p-3 rounded shadow mb-2 flex justify-between"
+          className={`p-3 rounded shadow mb-2 flex justify-between items-center
+            ${
+              m.active === false
+                ? "bg-gray-100 opacity-70 border border-dashed"
+                : "bg-white"
+            }`}
         >
           <div>
             <b>{m.name}</b>
@@ -236,15 +276,26 @@ export default function FamilyDetailPage() {
           </div>
 
           {isEditor && (
-            <button
-              onClick={() => {
-                setEditMember({ id, ...m });
-                setMemberModalOpen(true);
-              }}
-              className="text-sm text-blue-600"
-            >
-              Edit
-            </button>
+            <div className="flex gap-3 items-center">
+              <button
+                onClick={() => {
+                  setEditMember({ id, ...m });
+                  setMemberModalOpen(true);
+                }}
+                className="text-sm text-blue-600"
+              >
+                Edit
+              </button>
+
+              <button
+                onClick={() => toggleMemberVisibility(id, m.active !== false)}
+                className={`text-sm ${
+                  m.active === false ? "text-green-600" : "text-red-600"
+                }`}
+              >
+                {m.active === false ? "Unhide" : "Hide"}
+              </button>
+            </div>
           )}
         </div>
       ))}
@@ -261,14 +312,17 @@ export default function FamilyDetailPage() {
         </button>
       )}
 
-      {userRecord?.familyId === familyId && (
-        <button
-          onClick={leaveFamily}
-          className="mt-6 w-full bg-red-500 text-white py-2 rounded"
-        >
-          Leave Family
-        </button>
-      )}
+      {!isModal &&
+  userRecord?.role !== "admin" &&
+  userRecord?.familyId === familyId && (
+    <button
+      onClick={leaveFamily}
+      className="mt-6 w-full bg-red-500 text-white py-2 rounded"
+    >
+      Leave Family
+    </button>
+  )}
+
 
       <MemberForm
         open={memberModalOpen}

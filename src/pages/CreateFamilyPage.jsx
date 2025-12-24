@@ -3,7 +3,7 @@ import { db } from "../firebase";
 import { ref, runTransaction, set } from "firebase/database";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
-
+import { toUpperText } from "../utils/textUtils";
 export default function CreateFamilyPage() {
   const { user, updateUserRecordCache } = useAuth();
   const navigate = useNavigate();
@@ -77,19 +77,20 @@ const [editValue, setEditValue] = useState("");
     <div className="p-4 max-w-md mx-auto space-y-3">
       <h1 className="text-xl font-bold">Create Family</h1>
 
-      <input
-        placeholder="Current City *"
-        value={currentCity}
-        onChange={(e) => setCurrentCity(e.target.value)}
-        className="w-full border p-2 rounded"
-      />
+ <input
+  placeholder="Current City *"
+  value={currentCity}
+  onChange={(e) => setCurrentCity(toUpperText(e.target.value))}
+  className="w-full border p-2 rounded"
+/>
 
-      <input
-        placeholder="Native City"
-        value={nativeCity}
-        onChange={(e) => setNativeCity(e.target.value)}
-        className="w-full border p-2 rounded"
-      />
+
+    <input
+  placeholder="Native City"
+  value={nativeCity}
+  onChange={(e) => setNativeCity(toUpperText(e.target.value))}
+  className="w-full border p-2 rounded"
+/>
 
       {/* ✅ ADDRESS */}
       <textarea

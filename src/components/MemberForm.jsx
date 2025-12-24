@@ -2,14 +2,12 @@
 import React, { useState, useEffect } from "react";
 
 /* ---------------- TEXT HELPERS ---------------- */
-// Proper Case, English only
 const toProperCase = (value) =>
   value
     .replace(/[^a-zA-Z\s]/g, "")
     .toLowerCase()
     .replace(/\b\w/g, (c) => c.toUpperCase());
 
-// English text only (letters, numbers, space, dot)
 const toEnglishText = (value) =>
   value.replace(/[^a-zA-Z0-9.\s]/g, "");
 
@@ -24,7 +22,6 @@ export default function MemberForm({ open, onClose, initial = null, onSave }) {
 
   const [birthdate, setBirthdate] = useState("");
   const [occupation, setOccupation] = useState("");
-
   const [education, setEducation] = useState("");
 
   const [piyarDetails, setPiyarDetails] = useState("");
@@ -39,7 +36,7 @@ export default function MemberForm({ open, onClose, initial = null, onSave }) {
       setName(initial.name || "");
 
       if (initial.mobile && initial.mobile.length > 10) {
-        setCountryCode(initial.mobile.slice(0, initial.mobile.length - 10));
+        setCountryCode(initial.mobile.slice(0, -10));
         setMobile(initial.mobile.slice(-10));
       } else {
         setCountryCode("91");
@@ -50,6 +47,7 @@ export default function MemberForm({ open, onClose, initial = null, onSave }) {
       setMaritalStatus(initial.maritalStatus || "");
       setBirthdate(initial.birthdate || "");
       setEducation(initial.education || "");
+      setOccupation(initial.occupation || "");
       setPiyarDetails(initial.piyarDetails || "");
       setStayAway(!!initial.stayAway);
       setStayCity(initial.stayCity || "");
@@ -61,6 +59,7 @@ export default function MemberForm({ open, onClose, initial = null, onSave }) {
       setMaritalStatus("");
       setBirthdate("");
       setEducation("");
+      setOccupation("");
       setPiyarDetails("");
       setStayAway(false);
       setStayCity("");
@@ -70,16 +69,6 @@ export default function MemberForm({ open, onClose, initial = null, onSave }) {
   if (!open) return null;
 
   /* ---------------- HELPERS ---------------- */
-  const formatBirthdate = (value) => {
-    let v = value.replace(/[^\d-]/g, "").slice(0, 10);
-    if (/^\d-$/.test(v)) v = "0" + v;
-    const parts = v.split("-");
-    if (parts[0].length === 2 && parts.length === 1) v = parts[0] + "-";
-    if (parts.length === 2 && parts[1].length === 2)
-      v = parts[0] + "-" + parts[1] + "-";
-    return v;
-  };
-
   const getAge = (birthdate) => {
     if (!/^\d{2}-\d{2}-\d{4}$/.test(birthdate)) return null;
     const [d, m, y] = birthdate.split("-").map(Number);
@@ -96,34 +85,24 @@ export default function MemberForm({ open, onClose, initial = null, onSave }) {
     return dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12 && yyyy >= 1900 && yyyy <= now;
   };
 
-  const validCountryCode = (cc) => /^\d{1,3}$/.test(cc);
-  const validMobileNumber = (num) => /^\d{6,12}$/.test(num);
   const validMobile = () =>
-    !mobile || (validCountryCode(countryCode) && validMobileNumber(mobile));
+    !mobile || (/^\d{1,3}$/.test(countryCode) && /^\d{6,12}$/.test(mobile));
 
   /* ---------------- SAVE ---------------- */
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!name.trim()) {
-      alert("Name is required");
-      return;
-    }
-
-    if (!validBirthdate(birthdate)) {
-      alert("Birthdate must be DD-MM-YYYY");
-      return;
-    }
-
-    if (!validMobile()) {
-      alert("Enter valid country code and mobile number");
-      return;
-    }
+    if (!name.trim()) return alert("Name is required");
+    if (!validBirthdate(birthdate))
+      return alert("Birthdate must be DD-MM-YYYY");
+    if (!validMobile())
+      return alert("Enter valid country code and mobile number");
 
     setLoading(true);
 
     try {
       const fullMobile = mobile ? `${countryCode}${mobile}` : "";
+      const age = getAge(birthdate);
 
       await onSave(
         {
@@ -134,14 +113,12 @@ export default function MemberForm({ open, onClose, initial = null, onSave }) {
           birthdate,
           education: education.trim(),
 
-          occupation: (() => {
-            const age = getAge(birthdate);
-            return age && age >= 18 && age <= 65 ? occupation : "";
-          })(),
+          occupation: age && age >= 18 && age <= 65 ? occupation : "",
 
+          // ✅ MAYAKA – FEMALE + (MARRIED / WIDOW) ONLY
           piyarDetails:
             gender === "Female" &&
-            ["Married", "Divorced", "Widow"].includes(maritalStatus)
+            ["Married", "Widow"].includes(maritalStatus)
               ? piyarDetails.trim()
               : "",
 
@@ -184,12 +161,12 @@ export default function MemberForm({ open, onClose, initial = null, onSave }) {
           className="w-full border p-2 rounded"
         />
 
+        {/* MOBILE */}
         <label className="text-sm text-gray-600">Mobile Number</label>
         <div className="flex gap-2">
           <input
             placeholder="91"
             value={countryCode}
-            inputMode="numeric"
             onChange={(e) =>
               setCountryCode(e.target.value.replace(/\D/g, "").slice(0, 3))
             }
@@ -198,17 +175,12 @@ export default function MemberForm({ open, onClose, initial = null, onSave }) {
           <input
             placeholder="Mobile number"
             value={mobile}
-            inputMode="numeric"
             onChange={(e) =>
               setMobile(e.target.value.replace(/\D/g, "").slice(0, 12))
             }
             className="flex-1 border p-2 rounded"
           />
         </div>
-
-        <p className="text-xs text-gray-500">
-          Country code + mobile number (digits only)
-        </p>
 
         {/* GENDER + MARITAL */}
         <div className="flex gap-2">
@@ -221,7 +193,6 @@ export default function MemberForm({ open, onClose, initial = null, onSave }) {
           >
             M
           </button>
-
           <button
             type="button"
             className={`w-12 p-2 border rounded ${
@@ -231,48 +202,39 @@ export default function MemberForm({ open, onClose, initial = null, onSave }) {
           >
             F
           </button>
-
           <select
             value={maritalStatus}
             onChange={(e) => setMaritalStatus(e.target.value)}
             className="flex-1 border p-2 rounded"
           >
             <option value="">Marital Status</option>
-            {gender === "Male" && (
-              <>
-                <option>Unmarried</option>
-                <option>Married</option>
-                <option>Divorced</option>
-                <option>Widower</option>
-              </>
-            )}
-            {gender === "Female" && (
-              <>
-                <option>Unmarried</option>
-                <option>Married</option>
-                <option>Divorced</option>
-                <option>Widow</option>
-              </>
-            )}
+            <option>Unmarried</option>
+            <option>Married</option>
+            <option>Divorced</option>
+            {gender === "Male" && <option>Widower</option>}
+            {gender === "Female" && <option>Widow</option>}
           </select>
         </div>
 
+        {/* BIRTHDATE */}
         <input
           placeholder="Birthdate (DD-MM-YYYY)"
           value={birthdate}
-          inputMode="numeric"
-          maxLength={10}
-          onChange={(e) => setBirthdate(formatBirthdate(e.target.value))}
+          onChange={(e) =>
+            setBirthdate(e.target.value.replace(/[^\d-]/g, "").slice(0, 10))
+          }
           className="w-full border p-2 rounded"
         />
 
+        {/* EDUCATION */}
         <input
-          placeholder="Education"
+          placeholder="Education (e.g. B.Com, MBA)"
           value={education}
           onChange={(e) => setEducation(toEnglishText(e.target.value))}
           className="w-full border p-2 rounded"
         />
 
+        {/* OCCUPATION – AGE 18–65 */}
         {(() => {
           const age = getAge(birthdate);
           return age && age >= 18 && age <= 65 ? (
@@ -282,14 +244,64 @@ export default function MemberForm({ open, onClose, initial = null, onSave }) {
               className="w-full border p-2 rounded"
             >
               <option value="">Occupation</option>
-              <option>Student</option>
               <option>Service</option>
               <option>Business</option>
+              <option>Professional</option>
+              <option>Self Employed</option>
+              <option>Student</option>
+              <option>Housewife</option>
+              <option>Retired</option>
               <option>Other</option>
             </select>
           ) : null;
         })()}
+        {/* STAY AWAY – ONLY FOR UNMARRIED */}
+{/* STAY AWAY – ONLY FOR UNMARRIED */}
+{maritalStatus === "Unmarried" && (
+  <div className="flex items-center gap-4 text-sm">
+    <span className="font-medium whitespace-nowrap">
+      Stay away from home?
+    </span>
 
+    <label className="flex items-center gap-1">
+      <input
+        type="radio"
+        name="stayAway"
+        checked={!stayAway}
+        onChange={() => {
+          setStayAway(false);
+          setStayCity("");
+        }}
+      />
+      No
+    </label>
+
+    <label className="flex items-center gap-1">
+      <input
+        type="radio"
+        name="stayAway"
+        checked={stayAway}
+        onChange={() => setStayAway(true)}
+      />
+      Yes
+    </label>
+  </div>
+)}
+
+{maritalStatus === "Unmarried" && stayAway && (
+  <input
+    placeholder="Currently staying at (City / Place)"
+    value={stayCity}
+    onChange={(e) =>
+      setStayCity(toProperCase(e.target.value))
+    }
+    className="w-full border p-2 rounded"
+  />
+)}
+
+
+
+        {/* MAYAKA */}
         {gender === "Female" &&
           ["Married", "Widow"].includes(maritalStatus) && (
             <textarea
@@ -302,29 +314,7 @@ export default function MemberForm({ open, onClose, initial = null, onSave }) {
             />
           )}
 
-        {maritalStatus === "Unmarried" && (
-          <>
-            <label className="text-sm">
-              Stay away from home?
-              <input
-                type="checkbox"
-                checked={stayAway}
-                onChange={(e) => setStayAway(e.target.checked)}
-                className="ml-2"
-              />
-            </label>
-
-            {stayAway && (
-              <input
-                placeholder="Current stay city"
-                value={stayCity}
-                onChange={(e) => setStayCity(toProperCase(e.target.value))}
-                className="w-full border p-2 rounded"
-              />
-            )}
-          </>
-        )}
-
+        {/* ACTIONS */}
         <div className="flex gap-2 pt-2">
           <button
             type="button"

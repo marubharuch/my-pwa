@@ -16,7 +16,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import FamilyDirectoryPage from "./pages/FamilyDirectoryPage";
 import FamilyJoinRequestsPage from "./pages/FamilyJoinRequestsPage";
 import DebugPage from "./pages/DebugPage";
-
+import AdminPage from "./pages/AdminPage";
 export default function App() {
   console.log("App component rendered");
   return (
@@ -60,7 +60,16 @@ export default function App() {
     </ProtectedRoute>
   }
 />
-
+<Route
+  path="/admin"
+   element={
+    <ProtectedRoute>
+      <MainLayout>
+        <AdminPage />
+      </MainLayout>
+    </ProtectedRoute>
+  }
+/>
 
 <Route
   path="/join-family"

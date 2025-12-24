@@ -1,8 +1,11 @@
 /**
- * 🏠 FAMILY EDIT FORM – UNIFIED & EXPLICIT FIRST MEMBER
+ * 🏠 FAMILY EDIT FORM – UNIFIED (CREATE + EDIT)
  *
- * ✅ Address added (WITHOUT city name)
- * ✅ City & Native remain structured
+ * ✅ Same form for USER & ADMIN
+ * ✅ First member mandatory
+ * ✅ City & Native forced to UPPERCASE
+ * ✅ Admin-created families tracked
+ * ✅ User linked ONLY when required
  */
 
 import React, { useState } from "react";
@@ -12,8 +15,15 @@ import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import MemberForm from "./MemberForm";
 
-export default function FamilyEditForm({ mode = "create", familyData }) {
-  const { user, updateUserRecordCache } = useAuth();
+/* ---------- HELPERS ---------- */
+const toUpper = (v = "") => v.trim().toUpperCase();
+
+export default function FamilyEditForm({
+  mode = "create",
+  familyData = null,
+  linkUser = true, // 👈 IMPORTANT (admin will pass false)
+}) {
+  const { user, userRecord, updateUserRecordCache } = useAuth();
   const navigate = useNavigate();
 
   /* ---------------- FAMILY INFO ---------------- */
@@ -52,7 +62,7 @@ export default function FamilyEditForm({ mode = "create", familyData }) {
       return;
     }
 
-    if (!user) {
+    if (!user || !userRecord) {
       alert("Login required");
       return;
     }
@@ -62,12 +72,18 @@ export default function FamilyEditForm({ mode = "create", familyData }) {
     let familyId;
 
     try {
-      /* 1️⃣ GENERATE FAMILY ID */
+      /* 1️⃣ GENERATE FAMILY ID (SAFE) */
       if (mode === "create") {
-        await runTransaction(ref(db, "master/nextFamilySrno"), (val) => {
-          familyId = String(val || 1);
-          return (val || 1) + 1;
-        });
+        const result = await runTransaction(
+          ref(db, "master/nextFamilySrno"),
+          (current) => (current || 1) + 1
+        );
+
+        if (!result.committed) {
+          throw new Error("Family number generation failed");
+        }
+
+        familyId = String(result.snapshot.val() - 1);
       } else {
         familyId = familyData.familyId;
       }
@@ -76,13 +92,15 @@ export default function FamilyEditForm({ mode = "create", familyData }) {
       if (mode === "create") {
         await set(ref(db, `families/${familyId}`), {
           info: {
-            currentCity: family.currentCity,
-            nativeCity: family.nativeCity,
+            currentCity: toUpper(family.currentCity),
+            nativeCity: toUpper(family.nativeCity),
             address: family.address.trim(),
             editorEmails: { [user.uid]: true },
           },
           meta: {
             createdBy: user.uid,
+            createdByRole: userRecord.role,
+            createdVia: userRecord.role === "admin" ? "admin" : "self",
             createdAt: now,
             updatedAt: now,
             membersUpdatedAt: now,
@@ -90,8 +108,8 @@ export default function FamilyEditForm({ mode = "create", familyData }) {
         });
       } else {
         await update(ref(db, `families/${familyId}/info`), {
-          currentCity: family.currentCity,
-          nativeCity: family.nativeCity,
+          currentCity: toUpper(family.currentCity),
+          nativeCity: toUpper(family.nativeCity),
           address: family.address.trim(),
         });
 
@@ -100,39 +118,40 @@ export default function FamilyEditForm({ mode = "create", familyData }) {
         });
       }
 
-      /* 3️⃣ WRITE FIRST MEMBER */
-      const memberId = Date.now();
+      /* 3️⃣ WRITE FIRST MEMBER (CREATE ONLY) */
+      if (mode === "create") {
+        const memberId = Date.now();
 
-      await set(
-        ref(db, `families/${familyId}/members/${memberId}`),
-        {
+        await set(ref(db, `families/${familyId}/members/${memberId}`), {
           ...firstMember,
           id: memberId,
           active: true,
           createdAt: now,
           updatedAt: now,
           createdBy: user.uid,
-        }
-      );
+        });
 
-      /* 🔥 DIRECTORY SYNC */
-      await update(ref(db, `families/${familyId}/meta`), {
-        updatedAt: now,
-        membersUpdatedAt: now,
-      });
+        await update(ref(db, `families/${familyId}/meta`), {
+          updatedAt: now,
+          membersUpdatedAt: now,
+        });
+      }
 
-      /* 4️⃣ LINK USER */
-      if (mode === "create") {
+      /* 4️⃣ LINK USER (ONLY IF ALLOWED) */
+      if (mode === "create" && linkUser) {
         await update(ref(db, `users/${user.uid}`), {
           familyId,
           role: "member",
         });
 
         updateUserRecordCache({ familyId, role: "member" });
-
         navigate(`/family/${familyId}`);
       } else {
-        alert("Family updated successfully");
+        alert(
+          mode === "create"
+            ? "Family created successfully"
+            : "Family updated successfully"
+        );
       }
     } catch (e) {
       console.error("Family save failed", e);
@@ -147,13 +166,12 @@ export default function FamilyEditForm({ mode = "create", familyData }) {
   ========================= */
   return (
     <div className="space-y-4">
-
       <input
         className="border p-2 w-full"
         placeholder="Current City *"
         value={family.currentCity}
         onChange={(e) =>
-          setFamily({ ...family, currentCity: e.target.value })
+          setFamily({ ...family, currentCity: toUpper(e.target.value) })
         }
       />
 
@@ -162,7 +180,7 @@ export default function FamilyEditForm({ mode = "create", familyData }) {
         placeholder="Native City"
         value={family.nativeCity}
         onChange={(e) =>
-          setFamily({ ...family, nativeCity: e.target.value })
+          setFamily({ ...family, nativeCity: toUpper(e.target.value) })
         }
       />
 
@@ -221,7 +239,11 @@ export default function FamilyEditForm({ mode = "create", familyData }) {
         disabled={saving || !firstMember}
         className="bg-blue-600 text-white p-2 rounded w-full disabled:opacity-50"
       >
-        {saving ? "Saving..." : "Create Family"}
+        {saving
+          ? "Saving..."
+          : mode === "create"
+          ? "Create Family"
+          : "Update Family"}
       </button>
     </div>
   );
