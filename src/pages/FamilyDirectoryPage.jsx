@@ -358,43 +358,69 @@ export default function FamilyDirectoryPage() {
 
                   {[...primary, ...(expanded[family.familyId] ? extra : [])].map(
                     (m, idx) => (
-                      <div key={m.id} className="flex items-center gap-3 p-1">
-                        <FaPhone />
-                        <span
-                          className={getMemberClass(m)}
-                          {...(!adminMode
-                            ? attachLongPressHandlers(m)
-                            : {})}
-                        >
-                          {renderName(m.name)}
-                        </span>
-                        <FaWhatsapp
-                          className="cursor-pointer"
-                          onClick={() =>
-                            window.open(
-                              `https://wa.me/91${m.mobile}`,
-                              "_blank"
-                            )
-                          }
-                        />
-                        {extra.length > 0 && idx === 0 && (
-                          <button
-                            onClick={() =>
-                              setExpanded((p) => ({
-                                ...p,
-                                [family.familyId]:
-                                  !p[family.familyId],
-                              }))
-                            }
-                          >
-                            {expanded[family.familyId] ? (
-                              <FaChevronUp />
-                            ) : (
-                              <FaChevronDown />
-                            )}
-                          </button>
-                        )}
-                      </div>
+      <div key={m.id} className="flex items-center gap-3 p-1">
+  {/* 📞 CALL */}
+  <a
+    href={m.mobile ? `tel:+${m.mobile}` : undefined}
+    onClick={(e) => !m.mobile && e.preventDefault()}
+    title={m.mobile ? "Call" : "Mobile not available"}
+    className={`relative flex items-center justify-center w-9 h-9 rounded-full 
+      transition active:scale-95
+      ${
+        m.mobile
+          ? "bg-blue-100 text-blue-600 hover:bg-blue-200"
+          : "bg-gray-200 text-gray-400 cursor-not-allowed"
+      }`}
+  >
+    <FaPhone />
+  </a>
+
+  {/* 👤 NAME */}
+  <span
+    className={getMemberClass(m)}
+    {...(!adminMode ? attachLongPressHandlers(m) : {})}
+  >
+    {renderName(m.name)}
+  </span>
+
+  {/* 💬 WHATSAPP */}
+  <button
+    type="button"
+    disabled={!m.mobile}
+    title={m.mobile ? "WhatsApp" : "Mobile not available"}
+    onClick={() =>
+      m.mobile &&
+      window.open(`https://wa.me/${m.mobile}`, "_blank")
+    }
+    className={`relative flex items-center justify-center w-9 h-9 rounded-full 
+      transition active:scale-95
+      ${
+        m.mobile
+          ? "bg-green-100 text-green-600 hover:bg-green-200"
+          : "bg-gray-200 text-gray-400 cursor-not-allowed"
+      }`}
+  >
+    <FaWhatsapp />
+  </button>
+
+  {/* ⬇️ EXPAND */}
+  {extra.length > 0 && idx === 0 && (
+    <button
+      onClick={() =>
+        setExpanded((p) => ({
+          ...p,
+          [family.familyId]: !p[family.familyId],
+        }))
+      }
+      className="flex items-center justify-center w-8 h-8 rounded-full
+                 bg-gray-100 hover:bg-gray-200 text-gray-600"
+    >
+      {expanded[family.familyId] ? <FaChevronUp /> : <FaChevronDown />}
+    </button>
+  )}
+</div>
+
+
                     )
                   )}
                 </div>
