@@ -1,48 +1,129 @@
 // src/App.jsx
+/**
+ * 🚦 APPLICATION ROUTER – SINGLE SOURCE OF TRUTH
+ *
+ * PURPOSE
+ * --------------------------------------------------
+ * This file defines ALL application routes:
+ *
+ * 1️⃣ Public routes (login, register)
+ * 2️⃣ Authenticated user routes
+ * 3️⃣ Admin routes
+ * 4️⃣ Super Admin routes (isolated)
+ * 5️⃣ Family-related flows
+ * 6️⃣ Debug & fallback handling
+ *
+ * IMPORTANT RULES
+ * --------------------------------------------------
+ * ❌ DO NOT put business logic here
+ * ❌ DO NOT fetch Firebase data here
+ * ✅ Only routing + layout wrapping
+ *
+ * ARCHITECTURE NOTES
+ * --------------------------------------------------
+ * - MainLayout handles Navbar + padding
+ * - ProtectedRoute blocks unauthenticated users
+ * - SuperAdmin pages are intentionally OUTSIDE MainLayout
+ * - "/" (root) = Family Directory (public view)
+ */
+
 import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 
+/* ===================== LAYOUT ===================== */
 import MainLayout from "./layouts/MainLayout";
 
-import HomePage from "./pages/HomePage";
+/* ===================== PUBLIC PAGES ===================== */
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import RegisterEmailPage from "./pages/RegisterEmailPage";
+
+/* ===================== CORE USER PAGES ===================== */
+import HomePage from "./pages/HomePage";
 import JoinFamilyPage from "./pages/JoinFamilyPage";
 import CreateFamilyPage from "./pages/CreateFamilyPage";
 import FamilyListPage from "./pages/FamilyListPage";
-import FamilyDetailPage from "./pages/FamilyDetailPage";
-import RegisterEmailPage from "./pages/RegisterEmailPage";
-import ProtectedRoute from "./components/ProtectedRoute";
 import FamilyDirectoryPage from "./pages/FamilyDirectoryPage";
+import FamilyDetailPage from "./pages/FamilyDetailPage";
+
+/* ===================== REQUESTS ===================== */
 import FamilyJoinRequestsPage from "./pages/FamilyJoinRequestsPage";
-import DebugPage from "./pages/DebugPage";
+
+/* ===================== ADMIN ===================== */
 import AdminPage from "./pages/AdminPage";
+
+/* ===================== SUPER ADMIN ===================== */
+import SuperAdminDashboard from "./pages/admin/SuperAdminDashboard";
+import AdminCreateFamilyPage from "./pages/admin/AdminCreateFamilyPage";
+import AdminUsersPage from "./pages/admin/AdminUsersPage";
+import AdminJoinRequestsPage from "./pages/admin/AdminJoinRequestsPage";
+
+/* ===================== DEV / DEBUG ===================== */
+import DebugPage from "./pages/DebugPage";
+
+/* ===================== ROUTE GUARD ===================== */
+import ProtectedRoute from "./components/ProtectedRoute";
+
 export default function App() {
   console.log("App component rendered");
+
   return (
     <Router>
       <Routes>
 
-        {/* PUBLIC ROUTES */}
-        <Route path="/login" element={<MainLayout><LoginPage /></MainLayout>} />
+        {/* =====================================================
+            🟢 PUBLIC ROUTES (NO LOGIN REQUIRED)
+           ===================================================== */}
+
+        {/* Login (Google / Email) */}
+        <Route
+          path="/login"
+          element={
+            <MainLayout>
+              <LoginPage />
+            </MainLayout>
+          }
+        />
+
+        {/* Email + Password registration (rarely used now) */}
         <Route path="/register" element={<RegisterPage />} />
+
+        {/* Register email separately (legacy / utility) */}
         <Route path="/register-email" element={<RegisterEmailPage />} />
 
-
-<Route
-  path="/debug"
-  element={
-    <MainLayout>
-      <DebugPage />
-    </MainLayout>
-  }
-/>
-
-
-
-        {/* HOME WITH LAYOUT */}
+        {/* =====================================================
+            🧪 DEBUG / DEV ROUTES
+           ===================================================== */}
         <Route
-          path="/"
+          path="/debug"
+          element={
+            <MainLayout>
+              <DebugPage />
+            </MainLayout>
+          }
+        />
+
+        {/* =====================================================
+            👑 SUPER ADMIN ROUTES
+            - NOT wrapped in MainLayout intentionally
+            - SuperAdminDashboard controls its own UI
+           ===================================================== */}
+        <Route path="/superadmin" element={<SuperAdminDashboard />} />
+        <Route
+          path="/superadmin/create-family"
+          element={<AdminCreateFamilyPage />}
+        />
+        <Route path="/superadmin/users" element={<MainLayout><AdminUsersPage /></MainLayout>} />
+        <Route
+          path="/superadmin/join-requests"
+          element={<MainLayout><AdminJoinRequestsPage /></MainLayout>}
+        />
+
+        {/* =====================================================
+            🏠 HOME (AUTHENTICATED)
+           ===================================================== */}
+        <Route
+          path="/home"
           element={
             <MainLayout>
               <HomePage />
@@ -50,74 +131,47 @@ export default function App() {
           }
         />
 
-<Route
-  path="/create-family"
-  element={
-    <ProtectedRoute>
-      <MainLayout>
-        <CreateFamilyPage />
-      </MainLayout>
-    </ProtectedRoute>
-  }
-/>
-<Route
-  path="/admin"
-   element={
-    <ProtectedRoute>
-      <MainLayout>
-        <AdminPage />
-      </MainLayout>
-    </ProtectedRoute>
-  }
-/>
+        {/* =====================================================
+            👨‍👩‍👧‍👦 FAMILY FLOWS (PROTECTED)
+           ===================================================== */}
 
-<Route
-  path="/join-family"
-  element={
-    <ProtectedRoute>
-      <MainLayout>
-        <JoinFamilyPage />
-      </MainLayout>
-    </ProtectedRoute>
-  }
-/>
-<Route
-          path="/dir"
-          element={
-            
-              <MainLayout>
-                <FamilyDirectoryPage/>
-              </MainLayout>
-            
-          }
-        />
-
-<Route 
-path="/family/:familyId/requests"
- element={
-
-<ProtectedRoute>
-      <MainLayout>
-        <FamilyJoinRequestsPage />
-      </MainLayout>
-    </ProtectedRoute>   
- 
- 
- } />
-
-
-        {/* PROTECTED ROUTES */}
+        {/* User creates own family */}
         <Route
-          path="/families"
+          path="/create-family"
           element={
             <ProtectedRoute>
               <MainLayout>
-                <FamilyListPage />
+                <CreateFamilyPage />
               </MainLayout>
             </ProtectedRoute>
           }
         />
 
+        {/* Join an existing family */}
+        <Route
+          path="/join-family"
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                <JoinFamilyPage />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Family join requests (family-level approval) */}
+        <Route
+          path="/family/:familyId/requests"
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                <FamilyJoinRequestsPage />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* View single family details */}
         <Route
           path="/family/:srno"
           element={
@@ -129,19 +183,61 @@ path="/family/:familyId/requests"
           }
         />
 
-        {/* ADMIN PAGE (protected, empty placeholder) */}
+        {/* =====================================================
+            📋 DIRECTORY & LISTING
+           ===================================================== */}
+
+        {/* ROOT = FAMILY DIRECTORY (PUBLIC READ) */}
         <Route
-          path="/admin"
+          path="/"
+          element={
+            <MainLayout>
+              <FamilyDirectoryPage />
+            </MainLayout>
+          }
+        />
+
+        {/* Alternative family list (older / admin utility) */}
+        <Route
+          path="/families"
           element={
             <ProtectedRoute>
               <MainLayout>
-                Admin dashboard coming soon...
+                <FamilyListPage />
               </MainLayout>
             </ProtectedRoute>
           }
         />
 
-        {/* FALLBACK ROUTE */}
+        {/* =====================================================
+            🛠 ADMIN (NORMAL ADMIN, NOT SUPER ADMIN)
+           ===================================================== */}
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                <AdminPage />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Admin join requests shortcut */}
+        <Route
+          path="/requests"
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                <AdminJoinRequestsPage />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* =====================================================
+            ❌ FALLBACK (404)
+           ===================================================== */}
         <Route
           path="*"
           element={

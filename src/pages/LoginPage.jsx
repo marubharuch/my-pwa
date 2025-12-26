@@ -42,7 +42,7 @@ export default function LoginPage() {
     try {
       setLoading(true);
       await loginWithEmail(email, password);
-      navigate("/");
+      navigate("/home");
     } catch {
       setError("Invalid email or password");
     } finally {
@@ -63,7 +63,7 @@ export default function LoginPage() {
     try {
       setLoading(true);
       await createUserWithEmailAndPassword(auth, email, password);
-      navigate("/");
+      navigate("/home");
     } catch (err) {
       console.error(err);
       setError("Unable to create account");
@@ -79,7 +79,7 @@ export default function LoginPage() {
 
     try {
       await loginWithGoogleChecked();
-      navigate("/");
+      navigate("/home");
     } catch {
       setError("Google login failed");
     } finally {

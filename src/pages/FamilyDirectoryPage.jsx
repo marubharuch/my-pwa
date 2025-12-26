@@ -26,6 +26,10 @@ import {
 } from "react-icons/fa";
 
 import FamilyDetailPage from "./FamilyDetailPage";
+import DesignationModal from "../components/DesignationModal";
+import { get, ref } from "firebase/database";
+import { db } from "../firebase";
+
 
 export default function FamilyDirectoryPage() {
   /* ================= DATA ================= */
@@ -48,8 +52,19 @@ export default function FamilyDirectoryPage() {
 
   /* ADMIN FAMILY EDIT */
   const [editFamily, setEditFamily] = useState(null);
+  const [designationTarget, setDesignationTarget] = useState(null);
+const [designations, setDesignations] = useState({});
+
 
   const PRIMARY_COUNT = 1;
+
+  useEffect(() => {
+  get(ref(db, "master/designations")).then((snap) => {
+    if (snap.exists()) {
+      setDesignations(snap.val());
+    }
+  });
+}, []);
 
   /* ================= SAFE REGEX ================= */
   const escapeRegExp = (str) =>
@@ -196,8 +211,7 @@ export default function FamilyDirectoryPage() {
     <div className="p-4 max-w-3xl mx-auto">
       {/* ================= TOP BAR ================= */}
       <div className="flex flex-wrap gap-2 justify-between items-center mb-2">
-        <h1 className="font-semibold text-lg">Family Directory</h1>
-
+        
         {isAdmin && (
           <button
             onClick={() => setAdminMode((p) => !p)}
@@ -313,6 +327,14 @@ export default function FamilyDirectoryPage() {
                   <FaPhone />
                   <span
                     className={getMemberClass(m)}
+                    onClick={() => {
+    if (adminMode) {
+      setDesignationTarget({
+        familyId: family.familyId,
+        member: m,
+      });
+    }
+  }}
                     {...(!adminMode ? attachLongPressHandlers(m) : {})}
                   >
                     {renderName(m.name)}
@@ -381,6 +403,7 @@ export default function FamilyDirectoryPage() {
     {...(!adminMode ? attachLongPressHandlers(m) : {})}
   >
     {renderName(m.name)}
+    
   </span>
 
   {/* 💬 WHATSAPP */}
@@ -478,6 +501,14 @@ export default function FamilyDirectoryPage() {
           </div>
         </div>
       )}
+      <DesignationModal
+  open={!!designationTarget}
+  familyId={designationTarget?.familyId}
+  member={designationTarget?.member}
+  masterDesignations={designations}
+  onClose={() => setDesignationTarget(null)}
+/>
+
     </div>
   );
 }

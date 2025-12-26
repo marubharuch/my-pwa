@@ -27,7 +27,7 @@ export default function HomePage() {
   const familyId = userRecord.familyId;
   const pendingJoin = userRecord.pendingJoin;
   const isAdmin = userRecord.role === "admin";
-
+    const isSuparAdmin = userRecord.role === "superadmin";
   /* ---------------- HOME UI ---------------- */
   return (
     <div className="p-4 max-w-md mx-auto">
@@ -91,6 +91,14 @@ export default function HomePage() {
           className="block w-full bg-purple-600 text-white py-2 rounded text-center mt-4"
         >
           Admin Dashboard
+        </Link>
+      )}
+{isSuparAdmin && (
+        <Link
+          to="/superadmin"
+          className="block w-full bg-purple-600 text-white py-2 rounded text-center mt-4"
+        >
+          Super Admin Dashboard
         </Link>
       )}
 

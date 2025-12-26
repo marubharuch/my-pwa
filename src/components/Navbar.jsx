@@ -13,6 +13,10 @@
 import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import usePWAInstall from "../hooks/usePWAInstall";
+import { APP_VERSION } from "../version";
+
+
 
 import {
   HiHome,
@@ -30,6 +34,7 @@ export default function Navbar() {
   const familySrno = userRecord?.familySrno;
   const isAdmin = userRecord?.role === "admin";
   const userName = userRecord?.name || user?.displayName || "Profile";
+const { canInstall, install } = usePWAInstall();
 
   const handleLogout = async () => {
     await logout();
@@ -39,19 +44,41 @@ export default function Navbar() {
   return (
     <nav className="bg-blue-600 fixed top-0 w-full z-50 shadow">
       <div className="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
+<div className="flex items-center gap-2">
+  {/* HOME ICON */}
+  <Link to="/" className="text-white text-2xl">
+    <HiHome />
+  </Link>
 
-        {/* HOME ICON → DIRECTORY */}
-        <Link to="/dir" className="text-white text-2xl">
-          <HiHome />
-        </Link>
+  {/* APP NAME + VERSION */}
+  <Link
+    to="/"
+    className="text-white font-semibold text-base"
+  >
+    OswalDirectory <span className="text-xs opacity-80 ml-1">
+    {APP_VERSION}
+  </span>
+  </Link>
+</div>
 
-        {/* LOGO → DIRECTORY */}
-        <Link to="/dir" className="text-white font-semibold">
-          Oswal Directory
-        </Link>
+        
+
+
+
+        
+
 
         {/* ================= MOBILE ================= */}
         <div className="flex items-center gap-5 md:hidden text-white text-[11px]">
+{canInstall && (
+  <button
+    onClick={install}
+    className="flex flex-col items-center text-white"
+  >
+    <span className="text-xl">⬇️</span>
+    <span>Install</span>
+  </button>
+)}
 
          
           {/* MY FAMILY */}
@@ -81,7 +108,7 @@ export default function Navbar() {
             </Link>
           ) : (
             <button
-              onClick={() => navigate("/")}
+              onClick={() => navigate("/home")}
               className="flex flex-col items-center"
             >
               <span className="text-xs font-semibold truncate max-w-[60px]">
@@ -94,6 +121,14 @@ export default function Navbar() {
         {/* ================= DESKTOP ================= */}
         <div className="hidden md:flex gap-6 text-white text-sm items-center">
          
+{canInstall && (
+  <button
+    onClick={install}
+    className="px-3 py-1 bg-white text-blue-600 rounded text-sm font-medium"
+  >
+    Install App
+  </button>
+)}
 
           {familySrno && (
             <Link to={`/family/${familySrno}`}>
