@@ -37,7 +37,8 @@ export default function FamilyDirectoryPage() {
   const { userRecord } = useAuth();
 
   /* ================= ROLE ================= */
-  const isAdmin = userRecord?.role === "admin";
+  const isAdmin = userRecord?.role === "admin"||
+  userRecord?.role === "superadmin";
 
   /* ================= UI STATE ================= */
   const [sortMode, setSortMode] = useState("srno");

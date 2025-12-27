@@ -1,16 +1,5 @@
 // src/pages/admin/SuperAdminDashboard.jsx
 
-/**
- * 👑 SUPER ADMIN DASHBOARD
- *
- * RULES:
- * ------------------------------------------------
- * ✅ Only for role = superadmin
- * ✅ No heavy lists on this page
- * ✅ Only navigation + snapshot summary
- * ✅ Mobile-first, touch friendly UI
- */
-
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
@@ -54,31 +43,48 @@ export default function SuperAdminDashboard() {
       loadMeta();
     }
   }, [userRecord]);
+
   /* ================= LOAD DELTA ================= */
-useEffect(() => {
-  async function loadDelta() {
-    if (!snapshotMeta?.generatedAt) return;
+  useEffect(() => {
+    async function loadDelta() {
+      if (!snapshotMeta?.generatedAt) return;
 
-    try {
-      const delta = await calculateFamilyDelta(snapshotMeta.generatedAt);
-      setDeltaInfo(delta);
-    } catch (e) {
-      console.error("Delta calculation failed", e);
+      try {
+        const delta = await calculateFamilyDelta(snapshotMeta.generatedAt);
+        setDeltaInfo(delta);
+      } catch (e) {
+        console.error("Delta calculation failed", e);
+      }
     }
-  }
 
-  loadDelta();
-}, [snapshotMeta]);
-
+    loadDelta();
+  }, [snapshotMeta]);
 
   /* ================= SNAPSHOT GENERATE ================= */
   const handleGenerateSnapshot = async () => {
-    if (!window.confirm("Generate full family snapshot now?")) return;
+    const warning =
+      "⚠️ Generate FULL RTDB snapshot?\n\n" +
+      "• This will read ALL families from RTDB\n" +
+      "• Existing Firestore snapshot will be overwritten\n" +
+      "• All users will re-download data automatically\n\n" +
+      "Do you want to continue?";
+
+    if (!window.confirm(warning)) return;
 
     try {
       setBusy(true);
-      const result = await generateFamilySnapshot();
-      alert(`Snapshot generated (${result.parts} part(s))`);
+
+      // 🔑 Version bump (simple + safe)
+      const newVersion = `v${Date.now()}`;
+
+      const result = await generateFamilySnapshot(newVersion);
+
+      alert(
+        `Snapshot generated successfully\n\n` +
+          `Version: ${newVersion}\n` +
+          `Parts: ${result.parts}`
+      );
+
       setSnapshotMeta(result);
     } catch (e) {
       console.error(e);
@@ -127,6 +133,18 @@ useEffect(() => {
           👥 Users & Roles
         </button>
 
+<button
+          onClick={() => navigate("/missingeditors")}
+          className="rounded-xl bg-blue-600 text-white py-4 font-semibold shadow active:scale-95 transition"
+        >
+          👥 Broken Link Repairing
+        </button>
+        <button
+          onClick={() => navigate("/superadmin/delete-family")}
+          className="rounded-xl bg-red-600 text-white py-4 font-semibold shadow active:scale-95 transition"
+        >
+          🗑️ Delete Family
+        </button> 
         <button
           onClick={() => navigate("/superadmin/join-requests")}
           className="rounded-xl bg-purple-600 text-white py-4 font-semibold shadow active:scale-95 transition"
@@ -143,6 +161,9 @@ useEffect(() => {
 
         <div className="text-sm text-gray-700 space-y-1">
           <div>
+            <b>Version:</b> {snapshotMeta?.version || "—"}
+          </div>
+          <div>
             <b>Last Generated:</b>{" "}
             {snapshotMeta?.generatedAtISO || "—"}
           </div>
@@ -154,20 +175,20 @@ useEffect(() => {
             <b>Parts:</b> {snapshotMeta?.parts || "—"}
           </div>
         </div>
-        {deltaInfo && (
-  <ul className="text-sm text-gray-700 list-disc pl-5 space-y-1">
-    <li>Updated families: {deltaInfo.count}</li>
-    <li>Approx size: {deltaInfo.sizeHuman}</li>
-  </ul>
-)}
 
+        {deltaInfo && (
+          <ul className="text-sm text-gray-700 list-disc pl-5 space-y-1">
+            <li>Updated families: {deltaInfo.count}</li>
+            <li>Approx size: {deltaInfo.sizeHuman}</li>
+          </ul>
+        )}
 
         <button
           onClick={handleGenerateSnapshot}
           disabled={busy}
           className="w-full mt-2 bg-red-600 text-white py-3 rounded-lg font-medium disabled:opacity-50 active:scale-95 transition"
         >
-          {busy ? "Generating Snapshot…" : "Generate Snapshot"}
+          {busy ? "Generating Snapshot…" : "Generate Full Snapshot"}
         </button>
       </section>
 

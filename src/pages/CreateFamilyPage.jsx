@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { db } from "../firebase";
-import { ref, runTransaction, set } from "firebase/database";
+import { ref, runTransaction, update } from "firebase/database";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { toUpperText } from "../utils/textUtils";
@@ -17,68 +17,69 @@ export default function CreateFamilyPage() {
   const [loading, setLoading] = useState(false);
 
   const handleCreate = async () => {
-    if (!currentCity.trim()) {
-      alert("Current city is required");
-      return;
-    }
+  if (!currentCity.trim()) {
+    alert("Current city is required");
+    return;
+  }
 
-    // ✅ Samaj validation ONLY if married outside
-    if (isMarriedOutside && !samaj.trim()) {
-      alert("Please enter Samaj name");
-      return;
-    }
+  if (isMarriedOutside && !samaj.trim()) {
+    alert("Please enter Samaj name");
+    return;
+  }
 
-    if (!user) {
-      alert("Login required");
-      return;
-    }
+  if (!user) {
+    alert("Login required");
+    return;
+  }
 
-    setLoading(true);
+  setLoading(true);
 
-    try {
-      let familyId;
-      const now = Date.now();
+  try {
+    let familyId;
+    const now = Date.now();
 
-      /* 1️⃣ Generate family ID */
-      await runTransaction(ref(db, "master/nextFamilySrno"), (val) => {
-        familyId = String(val || 1);
-        return (val || 1) + 1;
-      });
+    /* 1️⃣ Generate family ID */
+    await runTransaction(ref(db, "master/nextFamilySrno"), (val) => {
+      familyId = String(val || 1);
+      return (val || 1) + 1;
+    });
 
-      /* 2️⃣ Create family */
-      await set(ref(db, `families/${familyId}`), {
-        info: {
-          currentCity: toUpperText(currentCity.trim()),
-          nativeCity: toUpperText(nativeCity.trim()),
-          samaj: isMarriedOutside
-            ? toUpperText(samaj.trim())
-            : "", // ✅ store empty if No
-          address: address.trim(),
-          editorEmails: {
-            [user.uid]: true,
-          },
+    /* 2️⃣ ATOMIC WRITE (FIX) */
+    const updates = {};
+
+    updates[`families/${familyId}`] = {
+      info: {
+        currentCity: toUpperText(currentCity.trim()),
+        nativeCity: toUpperText(nativeCity.trim()),
+        samaj: isMarriedOutside ? toUpperText(samaj.trim()) : "",
+        address: address.trim(),
+        editorEmails: {
+          [user.uid]: true,
         },
-        meta: {
-          createdBy: user.uid,
-          createdAt: now,
-          updatedAt: now,
-        },
-        members: {},
-      });
+      },
+      meta: {
+        createdBy: user.uid,
+        createdAt: now,
+        updatedAt: now,
+      },
+      members: {},
+    };
 
-      /* 3️⃣ Link user */
-      await set(ref(db, `users/${user.uid}/familyId`), familyId);
-      updateUserRecordCache({ familyId });
+    updates[`users/${user.uid}/familyId`] = familyId;
 
-      /* 4️⃣ Go to family page */
-      navigate(`/family/${familyId}`);
-    } catch (e) {
-      console.error(e);
-      alert("Family creation failed");
-    } finally {
-      setLoading(false);
-    }
-  };
+    await update(ref(db), updates);
+
+    /* 3️⃣ Cache + navigation */
+    updateUserRecordCache({ familyId });
+    navigate(`/family/${familyId}`);
+  } catch (e) {
+    console.error(e);
+    alert("Family creation failed");
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     <div className="p-4 max-w-md mx-auto space-y-3">

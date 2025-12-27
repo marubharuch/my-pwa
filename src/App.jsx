@@ -57,13 +57,14 @@ import SuperAdminDashboard from "./pages/admin/SuperAdminDashboard";
 import AdminCreateFamilyPage from "./pages/admin/AdminCreateFamilyPage";
 import AdminUsersPage from "./pages/admin/AdminUsersPage";
 import AdminJoinRequestsPage from "./pages/admin/AdminJoinRequestsPage";
+import SuperAdminFamilyDeletePage from "./pages/admin/SuperAdminFamilyDeletePage";
 
 /* ===================== DEV / DEBUG ===================== */
 import DebugPage from "./pages/DebugPage";
 
 /* ===================== ROUTE GUARD ===================== */
 import ProtectedRoute from "./components/ProtectedRoute";
-
+import MissingEditorsPage from "./pages/admin/MissingEditorsPage";
 export default function App() {
   console.log("App component rendered");
 
@@ -87,8 +88,9 @@ export default function App() {
 
         {/* Email + Password registration (rarely used now) */}
         <Route path="/register" element={<RegisterPage />} />
-
-        {/* Register email separately (legacy / utility) */}
+<Route path="/missingeditors" element={<MainLayout><MissingEditorsPage /></MainLayout>} />
+        
+        {/* Email registration confirmation */}
         <Route path="/register-email" element={<RegisterEmailPage />} />
 
         {/* =====================================================
@@ -113,6 +115,11 @@ export default function App() {
           path="/superadmin/create-family"
           element={<AdminCreateFamilyPage />}
         />
+        <Route
+          path="/superadmin/delete-family"
+          element={<SuperAdminFamilyDeletePage />}
+        />
+
         <Route path="/superadmin/users" element={<MainLayout><AdminUsersPage /></MainLayout>} />
         <Route
           path="/superadmin/join-requests"

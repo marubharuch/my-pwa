@@ -1,9 +1,5 @@
 import { ref, get } from "firebase/database";
-import {
-  doc,
-  setDoc,
-  writeBatch,
-} from "firebase/firestore";
+import { doc, writeBatch } from "firebase/firestore";
 import { db, firestore } from "../firebase";
 
 /**
@@ -12,7 +8,7 @@ import { db, firestore } from "../firebase";
  * - Reads ALL families from RTDB
  * - Splits data into <= 0.95 MB chunks
  * - Saves chunks to Firestore
- * - Saves snapshot_meta document
+ * - Saves snapshot_meta document WITH VERSION
  *
  * Firestore structure:
  * familySnapshots/
@@ -24,8 +20,15 @@ import { db, firestore } from "../firebase";
 
 const MAX_DOC_SIZE_BYTES = 950 * 1024; // 0.95 MB safety limit
 
-export async function generateFamilySnapshot() {
-  console.log("generateFamilySnapshot loaded");
+/**
+ * @param {string} version - snapshot version (required)
+ */
+export async function generateFamilySnapshot(version) {
+  if (!version) {
+    throw new Error("Snapshot version is required");
+  }
+
+  console.log("generateFamilySnapshot started", version);
 
   /* ================= LOAD RTDB DATA ================= */
   const snap = await get(ref(db, "families"));
@@ -81,6 +84,7 @@ export async function generateFamilySnapshot() {
       data,
       part: index + 1,
       generatedAt,
+      version, // 🔑 keep version with each part (optional but useful)
     });
   });
 
@@ -88,6 +92,7 @@ export async function generateFamilySnapshot() {
   const metaRef = doc(firestore, "familySnapshots", "snapshot_meta");
 
   const meta = {
+    version, // 🔑 CRITICAL FOR CACHE INVALIDATION
     generatedAt,
     generatedAtISO: new Date(generatedAt).toISOString(),
     totalFamilies: familyEntries.length,

@@ -147,7 +147,7 @@ const { canInstall, install } = usePWAInstall();
           ) : (
             <>
               <button
-                onClick={() => navigate("/")}
+                onClick={() => navigate("/home")}
                 className="font-semibold"
               >
                 {userName}
