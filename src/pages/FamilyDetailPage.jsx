@@ -121,6 +121,7 @@ export default function FamilyDetailPage({
           ? toUpperText(fieldValue.trim())
           : fieldValue.trim(),
     });
+alert("Family information updated successfully");
 
     await update(ref(db, `families/${familyId}/meta`), {
       updatedAt: now,
@@ -145,6 +146,7 @@ export default function FamilyDetailPage({
       active: data.active !== false,
       updatedAt: now,
     });
+alert(id ? "Member updated successfully" : "Member added successfully");
 
     await update(ref(db, `families/${familyId}/meta`), {
       updatedAt: now,
@@ -182,6 +184,7 @@ export default function FamilyDetailPage({
   };
 
   /* ---------------- UI STATES ---------------- */
+  {console.log("Rendering FamilyDetailPage UI states:")}
   if (loading || authLoading) return <div className="p-4">Loading…</div>;
   if (!family) return <div className="p-4">Family not found</div>;
 
@@ -236,8 +239,14 @@ export default function FamilyDetailPage({
                   />
                 )
               ) : (
-                <b className="text-sm">{family.info?.[field] || "—"}</b>
-              )}
+               <b className="text-sm">
+  {typeof family.info?.[field] === "string"
+    ? family.info[field]
+    : family.info?.[field]
+    ? JSON.stringify(family.info[field])
+    : "—"}
+</b>
+ )}
             </span>
 
             {isEditor &&
@@ -317,11 +326,11 @@ export default function FamilyDetailPage({
       {!isModal &&
   userRecord?.role !== "admin" &&
   userRecord?.familyId === familyId && (
-    <button
+    <button disabled
       onClick={leaveFamily}
-      className="mt-6 w-full bg-red-500 text-white py-2 rounded"
+      className="mt-6 w-full bg-red-500 text-white py-2 rounded  "
     >
-      Leave Family
+      visit Home page after adding/editing data
     </button>
   )}
 

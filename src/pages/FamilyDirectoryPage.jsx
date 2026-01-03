@@ -1,14 +1,102 @@
 /**
- * ⚠️ IMPORTANT – DO NOT REMOVE OR SIMPLIFY LOGIC BELOW ⚠️
+ * ============================================================
+ * 📘 FAMILY DIRECTORY PAGE – CRITICAL COMPONENT
+ * ============================================================
  *
- * This component implements MULTIPLE inter-dependent features:
+ * ⚠️ WARNING:
+ * ------------------------------------------------------------
+ * This file contains MULTIPLE tightly-coupled features.
+ * DO NOT refactor, split, or "clean up" without understanding
+ * the full interaction between states, modes, and UI behaviour.
  *
- * 1️⃣ Search Mode
- * 2️⃣ Group / Filter Mode
- * 3️⃣ Expand / Collapse Behaviour
- * 4️⃣ UI / UX Constraints
+ * ============================================================
+ * 🔑 CORE FUNCTIONALITIES
+ * ============================================================
  *
- * ❌ Do NOT refactor without understanding this file.
+ * 1️⃣ DATA LAYER
+ * ------------------------------------------------------------
+ * - Loads family + member data via `useFamilies()` hook
+ * - Uses AuthContext only for ROLE detection
+ * - Does NOT directly mutate family list (read-only display)
+ *
+ * 2️⃣ ROLE MODES
+ * ------------------------------------------------------------
+ * - User Mode:
+ *   • Long-press / right-click shows member info tooltip
+ *   • No edit access
+ *
+ * - Admin / SuperAdmin Mode:
+ *   • Toggleable via Admin Mode button
+ *   • Clicking family header opens FamilyDetail modal
+ *   • Clicking member opens Designation assignment modal
+ *
+ * 3️⃣ SEARCH MODE (High Priority)
+ * ------------------------------------------------------------
+ * - Activated when search text is non-empty
+ * - Ignores grouping, sorting, expand/collapse
+ * - Searches ONLY active members
+ * - Highlights matched text safely (escaped regex)
+ *
+ * 4️⃣ FILTER + GROUP MODE
+ * ------------------------------------------------------------
+ * - Filters by:
+ *   • Current City
+ *   • Native City
+ * - Grouping logic changes depending on filters:
+ *   • No filter → grouped by family number
+ *   • Filter applied → grouped by city pair
+ *
+ * 5️⃣ SORTING
+ * ------------------------------------------------------------
+ * - Sr No (default): by familyId
+ * - A–Z: by primary member name
+ *
+ * 6️⃣ EXPAND / COLLAPSE LOGIC
+ * ------------------------------------------------------------
+ * - Only primary member shown by default
+ * - Extra members hidden until expanded
+ * - Expand toggle rendered ONLY on first row
+ *
+ * 7️⃣ MEMBER INTERACTIONS
+ * ------------------------------------------------------------
+ * - Call icon:
+ *   • Disabled if mobile missing
+ *   • Uses normalized tel:+ format
+ *
+ * - WhatsApp icon:
+ *   • Disabled if mobile missing
+ *   • Opens wa.me link
+ *
+ * - Name click:
+ *   • User mode → long press for info
+ *   • Admin mode → designation edit
+ *
+ * 8️⃣ TOOLTIP (USER MODE ONLY)
+ * ------------------------------------------------------------
+ * - Positioned dynamically from click/press target
+ * - Dismissed by clicking outside
+ *
+ * 9️⃣ ADMIN MODALS
+ * ------------------------------------------------------------
+ * - FamilyDetailPage → full family editor
+ * - DesignationModal → role/designation assignment
+ *
+ * ============================================================
+ * ❌ DO NOT:
+ * ------------------------------------------------------------
+ * - Merge search + group rendering
+ * - Remove adminMode conditionals
+ * - Convert controlled state into derived state
+ * - Simplify expand logic
+ *
+ * ============================================================
+ * ✅ SAFE CHANGES:
+ * ------------------------------------------------------------
+ * - Styling only (Tailwind classes)
+ * - Icon replacement
+ * - Tooltip field additions
+ *
+ * ============================================================
  */
 
 import React, { useState, useEffect } from "react";
@@ -24,6 +112,15 @@ import {
   FaChevronUp,
   FaSync,
 } from "react-icons/fa";
+import {
+  normalizePhone,
+  escapeRegExp,
+  splitMembers,
+  getMemberClass,
+} from "../utils/familyDirectoryUtils";
+
+import MemberInfoTooltip from "../components/MemberInfoTooltip";
+import MemberRow from "../components/MemberRow";
 
 import FamilyDetailPage from "./FamilyDetailPage";
 import DesignationModal from "../components/DesignationModal";
@@ -32,13 +129,16 @@ import { db } from "../firebase";
 
 
 export default function FamilyDirectoryPage() {
+
+
   /* ================= DATA ================= */
   const { families, loading, syncing, refresh } = useFamilies();
   const { userRecord } = useAuth();
 
   /* ================= ROLE ================= */
-  const isAdmin = userRecord?.role === "admin"||
-  userRecord?.role === "superadmin";
+  const isAdmin =
+    userRecord?.role === "admin" ||
+    userRecord?.role === "superadmin";
 
   /* ================= UI STATE ================= */
   const [sortMode, setSortMode] = useState("srno");
@@ -48,41 +148,70 @@ export default function FamilyDirectoryPage() {
   const [currentCity, setCurrentCity] = useState("");
   const [nativeCity, setNativeCity] = useState("");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  
   const [expanded, setExpanded] = useState({});
   const [pressTimer, setPressTimer] = useState(null);
 
-  /* ADMIN FAMILY EDIT */
   const [editFamily, setEditFamily] = useState(null);
   const [designationTarget, setDesignationTarget] = useState(null);
-const [designations, setDesignations] = useState({});
+  const [designations, setDesignations] = useState({});
+
+  /* ================= PAGINATION ================= */
+
+const ITEMS_PER_PAGE = 5;
+const PRIMARY_COUNT = 1;
 
 
-  const PRIMARY_COUNT = 1;
+
+  
+  const [page, setPage] = useState(1);
+
+  /* ================= EFFECTS ================= */
+  useEffect(() => {
+    setPage(1);
+  }, [currentCity, nativeCity, sortMode, search]);
 
   useEffect(() => {
-  get(ref(db, "master/designations")).then((snap) => {
-    if (snap.exists()) {
-      setDesignations(snap.val());
-    }
-  });
-}, []);
+    get(ref(db, "master/designations")).then((snap) => {
+      if (snap.exists()) {
+        setDesignations(snap.val());
+      }
+    });
+  }, []);
+  useEffect(() => {
+  const t = setTimeout(() => {
+    setDebouncedSearch(search);
+  }, 300);
 
-  /* ================= SAFE REGEX ================= */
-  const escapeRegExp = (str) =>
-    str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return () => clearTimeout(t);
+}, [search]);
+
+
+const MIN_SEARCH_LEN = 3;
+
+
+
 
   /* ================= NAME HIGHLIGHT ================= */
   const renderName = (name) => {
-    if (!search) return name;
-    const reg = new RegExp(`(${escapeRegExp(search)})`, "gi");
-    return (
-      <span
-        dangerouslySetInnerHTML={{
-          __html: name.replace(reg, "<mark>$1</mark>"),
-        }}
-      />
-    );
-  };
+  if (!name) return "";
+
+  if (!search) return name;
+
+  const safeName = String(name);
+  const reg = new RegExp(`(${escapeRegExp(search)})`, "gi");
+
+  return (
+    <span
+      dangerouslySetInnerHTML={{
+        __html: safeName.replace(reg, "<mark>$1</mark>"),
+      }}
+    />
+  );
+};
+
 
   /* ================= MEMBER INFO (USER MODE) ================= */
   const showMemberInfo = (m, event) => {
@@ -111,23 +240,12 @@ const [designations, setDesignations] = useState({});
     },
   });
 
-  /* ================= SPLIT MEMBERS ================= */
-  const splitMembers = (membersObj) => {
-    const list = Object.entries(membersObj || {}).map(([key, m]) => ({
-      id: m.id || key,
-      ...m,
-    }));
-
-    list.sort((a, b) => Number(a.id) - Number(b.id));
-
-    return {
-      primary: list.slice(0, PRIMARY_COUNT),
-      extra: list.slice(PRIMARY_COUNT),
-    };
-  };
+ 
 
   /* ================= SEARCH ================= */
-  const searchMode = search.trim().length > 0;
+  const searchMode =
+  debouncedSearch.trim().length >= MIN_SEARCH_LEN;
+
 
   const searchedFamilies = searchMode
     ? families.filter((f) =>
@@ -174,26 +292,14 @@ const [designations, setDesignations] = useState({});
     return acc;
   }, {});
 
+
   /* ================= LOADING ================= */
   if (loading) {
     return <div className="p-4 text-gray-500">Loading directory…</div>;
   }
 
   /* ================= MEMBER STYLE ================= */
-  const getMemberClass = (m) => {
-    let cls = "flex-1 select-none ";
-
-    if (m.gender === "Male") cls += "text-blue-700 ";
-    else if (m.gender === "Female") cls += "text-pink-600 ";
-    else cls += "text-gray-600 ";
-
-    if (m.maritalStatus === "Married") cls += "font-semibold ";
-    else if (m.maritalStatus?.toLowerCase().includes("widow"))
-      cls += "italic ";
-    else cls += "font-normal ";
-
-    return cls;
-  };
+ 
 
   const renderInfoRow = (icon, label, value) => {
     if (!value) return null;
@@ -206,10 +312,24 @@ const [designations, setDesignations] = useState({});
       </div>
     );
   };
+  /* ================= PAGINATED GROUP ================= */
+const flatFamilies = Object.entries(grouped).flatMap(
+  ([_, famList]) => famList
+);
+
+const totalPages = Math.ceil(flatFamilies.length / ITEMS_PER_PAGE);
+
+const paginatedFamilies = flatFamilies.slice(
+  (page - 1) * ITEMS_PER_PAGE,
+  page * ITEMS_PER_PAGE
+);
+
+
+  
 
   /* ================= RENDER ================= */
   return (
-    <div className="p-4 max-w-3xl mx-auto">
+    <div className="p-4 max-w-3xl mx-auto pb-20">
       {/* ================= TOP BAR ================= */}
       <div className="flex flex-wrap gap-2 justify-between items-center mb-2">
         
@@ -251,6 +371,13 @@ const [designations, setDesignations] = useState({});
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
+      {search.trim().length > 0 &&
+ search.trim().length < MIN_SEARCH_LEN && (
+  <div className="text-xs text-gray-500 mb-2">
+    Type at least {MIN_SEARCH_LEN} characters to search
+  </div>
+)}
+
 
       {/* ================= FILTER BAR ================= */}
       <div className="flex items-center gap-3 mb-4">
@@ -262,11 +389,15 @@ const [designations, setDesignations] = useState({});
             onChange={(e) => setCurrentCity(e.target.value)}
           >
             <option value="">Current</option>
-            {[...new Set(families.map((f) => f.info.currentCity))].map(
-              (c) => (
-                <option key={c}>{c}</option>
-              )
-            )}
+            {[...new Set(families.map((f) => f.info.currentCity))]
+  .filter(Boolean)
+  .sort((a, b) => a.localeCompare(b))
+  .map((c) => (
+    <option key={c} value={c}>
+      {c}
+    </option>
+  ))}
+
           </select>
         </div>
 
@@ -278,11 +409,15 @@ const [designations, setDesignations] = useState({});
             onChange={(e) => setNativeCity(e.target.value)}
           >
             <option value="">Native</option>
-            {[...new Set(families.map((f) => f.info.nativeCity))].map(
-              (c) => (
-                <option key={c}>{c}</option>
-              )
-            )}
+            {[...new Set(families.map((f) => f.info.nativeCity))]
+  .filter(Boolean)
+  .sort((a, b) => a.localeCompare(b))
+  .map((c) => (
+    <option key={c} value={c}>
+      {c}
+    </option>
+  ))}
+
           </select>
         </div>
 
@@ -323,164 +458,215 @@ const [designations, setDesignations] = useState({});
                 )}
               </div>
 
-              {members.map((m) => (
-                <div key={m.id} className="flex items-center gap-3 p-1">
-                  <FaPhone />
-                  <span
-                    className={getMemberClass(m)}
-                    onClick={() => {
-    if (adminMode) {
-      setDesignationTarget({
-        familyId: family.familyId,
-        member: m,
-      });
-    }
-  }}
-                    {...(!adminMode ? attachLongPressHandlers(m) : {})}
-                  >
-                    {renderName(m.name)}
-                  </span>
-                  <FaWhatsapp
-                    className="cursor-pointer"
-                    onClick={() =>
-                      window.open(`https://wa.me/91${m.mobile}`, "_blank")
-                    }
-                  />
-                </div>
-              ))}
+              {members.map((m) => {
+  const phone = normalizePhone(m.mobile);
+  const waNumber = phone ? phone.replace("+", "") : null;
+
+  return (
+    <div key={m.id} className="flex items-center gap-3 p-1">
+      
+      {/* 📞 CALL */}
+      <a
+        href={phone ? `tel:${phone}` : undefined}
+        onClick={(e) => !phone && e.preventDefault()}
+        title={phone ? "Call" : "Mobile not available"}
+        className={`flex items-center justify-center w-9 h-9 rounded-full
+          ${
+            phone
+              ? "bg-blue-100 text-blue-600 hover:bg-blue-200"
+              : "bg-gray-200 text-gray-400 cursor-not-allowed"
+          }`}
+      >
+        <FaPhone />
+      </a>
+
+      {/* 👤 NAME */}
+      <span
+        className={getMemberClass(m)}
+        onClick={() => {
+          if (adminMode) {
+            setDesignationTarget({
+              familyId: family.familyId,
+              member: m,
+            });
+          }
+        }}
+        {...(!adminMode ? attachLongPressHandlers(m) : {})}
+      >
+        {renderName(m.name)}
+      </span>
+
+      {/* 💬 WHATSAPP */}
+      <button
+        type="button"
+        disabled={!waNumber}
+        title={waNumber ? "WhatsApp" : "Mobile not available"}
+        onClick={() =>
+          waNumber &&
+          window.open(`https://wa.me/${waNumber}`, "_blank")
+        }
+        className={`flex items-center justify-center w-9 h-9 rounded-full
+          ${
+            waNumber
+              ? "bg-green-100 text-green-600 hover:bg-green-200"
+              : "bg-gray-200 text-gray-400 cursor-not-allowed"
+          }`}
+      >
+        <FaWhatsapp />
+      </button>
+
+    </div>
+  );
+})}
+
             </div>
           );
         })}
 
       {/* ================= GROUP MODE ================= */}
-      {!searchMode &&
-        Object.entries(grouped).map(([group, famList]) => (
-          <div key={group}>
-            {famList.map((family) => {
-              const { primary, extra } = splitMembers(family.members);
+     {/* ================= GROUP MODE (PAGINATED) ================= */}
+{!searchMode &&
+  paginatedFamilies.map((family) => {
+    const { primary, extra } = splitMembers(
+      family.members,
+      PRIMARY_COUNT
+    );
 
-              return (
-                <div
-                  key={family.familyId}
-                  className="bg-white border rounded p-1 mb-1"
-                >
-                  <div
-                    className="flex justify-between items-center text-sm font-semibold border-b pb-1 mb-1"
-                    onClick={() => adminMode && setEditFamily(family)}
-                  >
-                    <span>
-                      #{family.familyId} {family.info.currentCity} (
-                      {family.info.nativeCity})
-                    </span>
-                    {family.info?.samaj && (
-                      <span className="text-xs text-gray-600">
-                        Samaj: {family.info.samaj}
-                      </span>
-                    )}
-                  </div>
+    return (
+      <div
+        key={family.familyId}
+        className="bg-white border rounded p-1 mb-1"
+      >
+        <div
+          className="flex justify-between items-center text-sm font-semibold border-b pb-1 mb-1"
+          onClick={() => adminMode && setEditFamily(family)}
+        >
+          <span>
+            #{family.familyId} {family.info.currentCity} (
+            {family.info.nativeCity})
+          </span>
+          {family.info?.samaj && (
+            <span className="text-xs text-gray-600">
+              Samaj: {family.info.samaj}
+            </span>
+          )}
+        </div>
 
-                  {[...primary, ...(expanded[family.familyId] ? extra : [])].map(
-                    (m, idx) => (
-      <div key={m.id} className="flex items-center gap-3 p-1">
-  {/* 📞 CALL */}
-  <a
-    href={m.mobile ? `tel:+${m.mobile}` : undefined}
-    onClick={(e) => !m.mobile && e.preventDefault()}
-    title={m.mobile ? "Call" : "Mobile not available"}
-    className={`relative flex items-center justify-center w-9 h-9 rounded-full 
-      transition active:scale-95
-      ${
-        m.mobile
-          ? "bg-blue-100 text-blue-600 hover:bg-blue-200"
-          : "bg-gray-200 text-gray-400 cursor-not-allowed"
-      }`}
-  >
-    <FaPhone />
-  </a>
-
-  {/* 👤 NAME */}
-  <span
-    className={getMemberClass(m)}
-    {...(!adminMode ? attachLongPressHandlers(m) : {})}
-  >
-    {renderName(m.name)}
-    
-  </span>
-
-  {/* 💬 WHATSAPP */}
-  <button
-    type="button"
-    disabled={!m.mobile}
-    title={m.mobile ? "WhatsApp" : "Mobile not available"}
-    onClick={() =>
-      m.mobile &&
-      window.open(`https://wa.me/${m.mobile}`, "_blank")
-    }
-    className={`relative flex items-center justify-center w-9 h-9 rounded-full 
-      transition active:scale-95
-      ${
-        m.mobile
-          ? "bg-green-100 text-green-600 hover:bg-green-200"
-          : "bg-gray-200 text-gray-400 cursor-not-allowed"
-      }`}
-  >
-    <FaWhatsapp />
-  </button>
-
-  {/* ⬇️ EXPAND */}
-  {extra.length > 0 && idx === 0 && (
-    <button
-      onClick={() =>
-        setExpanded((p) => ({
-          ...p,
-          [family.familyId]: !p[family.familyId],
-        }))
-      }
-      className="flex items-center justify-center w-8 h-8 rounded-full
-                 bg-gray-100 hover:bg-gray-200 text-gray-600"
-    >
-      {expanded[family.familyId] ? <FaChevronUp /> : <FaChevronDown />}
-    </button>
-  )}
-</div>
+        {[...primary, ...(expanded[family.familyId] ? extra : [])].map(
+          (m, idx) => (
+            <MemberRow
+              key={m.id}
+              member={m}
+              adminMode={adminMode}
+              attachLongPressHandlers={attachLongPressHandlers}
+              renderName={renderName}
+              memberClass={getMemberClass(m)}
+              showExpand={extra.length > 0 && idx === 0}
+              expanded={expanded[family.familyId]}
+              onToggleExpand={() =>
+                setExpanded((p) => ({
+                  ...p,
+                  [family.familyId]: !p[family.familyId],
+                }))
+              }
+            />
+          )
+        )}
+      </div>
+    );
+  })}
 
 
-                    )
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ))}
+{/* ================= PAGINATION FOOTER ================= */}
+{/* ================= MOBILE-FIRST PAGINATION ================= */}
+{/* ================= STICKY BOTTOM PAGINATION ================= */}
+{!searchMode && totalPages > 1 && (
+  <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t shadow-md">
+    <div className="max-w-3xl mx-auto flex justify-center items-center gap-1 py-2 text-sm">
+
+      {/* ◀ PREV */}
+      <button
+        onClick={() => setPage((p) => Math.max(1, p - 1))}
+        disabled={page === 1}
+        className="px-3 py-2 rounded border disabled:opacity-40"
+      >
+        ◀
+      </button>
+
+      {/* FIRST */}
+      <button
+        onClick={() => setPage(1)}
+        className={`px-3 py-2 rounded border ${
+          page === 1 ? "bg-blue-600 text-white" : ""
+        }`}
+      >
+        1
+      </button>
+
+      {/* LEFT DOTS */}
+      {page > 3 && <span className="px-1">…</span>}
+
+      {/* PREVIOUS PAGE */}
+      {page > 2 && (
+        <button
+          onClick={() => setPage(page - 1)}
+          className="px-3 py-2 rounded border"
+        >
+          {page - 1}
+        </button>
+      )}
+
+      {/* CURRENT */}
+      {page !== 1 && page !== totalPages && (
+        <button className="px-3 py-2 rounded border bg-blue-600 text-white">
+          {page}
+        </button>
+      )}
+
+      {/* NEXT PAGE */}
+      {page < totalPages - 1 && (
+        <button
+          onClick={() => setPage(page + 1)}
+          className="px-3 py-2 rounded border"
+        >
+          {page + 1}
+        </button>
+      )}
+
+      {/* RIGHT DOTS */}
+      {page < totalPages - 2 && <span className="px-1">…</span>}
+
+      {/* LAST */}
+      <button
+        onClick={() => setPage(totalPages)}
+        className={`px-3 py-2 rounded border ${
+          page === totalPages ? "bg-blue-600 text-white" : ""
+        }`}
+      >
+        {totalPages}
+      </button>
+
+      {/* ▶ NEXT */}
+      <button
+        onClick={() =>
+          setPage((p) => Math.min(totalPages, p + 1))
+        }
+        disabled={page === totalPages}
+        className="px-3 py-2 rounded border disabled:opacity-40"
+      >
+        ▶
+      </button>
+    </div>
+  </div>
+)}
+
 
       {/* ================= MEMBER INFO TOOLTIP ================= */}
-      {!adminMode && infoPopup?.member && (
-        <div
-          className="fixed inset-0 z-50"
-          onClick={() => setInfoPopup(null)}
-        >
-          <div
-            className="absolute bg-white shadow-lg rounded-lg p-3 text-sm max-w-xs"
-            style={{
-              left: infoPopup.x,
-              top: infoPopup.y,
-              transform: "translate(-50%, -110%)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="font-semibold mb-2 text-base">
-              {infoPopup.member.name}
-            </div>
-
-            {renderInfoRow("📞", "Mobile", infoPopup.member.mobile)}
-            {renderInfoRow("⚧", "Gender", infoPopup.member.gender)}
-            {renderInfoRow("💍", "Marital", infoPopup.member.maritalStatus)}
-            {renderInfoRow("🎂", "Birthdate", infoPopup.member.birthdate)}
-            {renderInfoRow("🎓", "Education", infoPopup.member.education)}
-            {renderInfoRow("💼", "Occupation", infoPopup.member.occupation)}
-          </div>
-        </div>
-      )}
+<MemberInfoTooltip
+  infoPopup={infoPopup}
+  onClose={() => setInfoPopup(null)}
+  renderInfoRow={renderInfoRow}
+/>
 
       {/* ================= ADMIN FAMILY EDIT MODAL ================= */}
       {editFamily && (

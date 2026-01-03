@@ -1,4 +1,10 @@
 📘 Oswal Directory – Architecture & Logic Notes
+
+bugs
+-leave family not working properly,
+admin can search family pending requiest by entering sr no and approve it
+ task
+  family members srno 
 🔍 Overview
 
 Oswal Directory is a community directory web app built using:

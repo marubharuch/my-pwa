@@ -21,39 +21,35 @@ export function useFamilies() {
     }));
 
   /* ================= LOAD FIRESTORE SNAPSHOT ================= */
-  async function loadSnapshotIfNeeded() {
+  async function loadSnapshotIfNeeded(force = false) {
     const local = await localforage.getItem(LOCAL_KEY);
-    const localVersion = await localforage.getItem(
-      SNAPSHOT_VERSION_KEY
-    );
+    const localVersion = await localforage.getItem(SNAPSHOT_VERSION_KEY);
 
     try {
       const metaSnap = await getDoc(
         doc(firestore, "familySnapshots", "snapshot_meta")
       );
 
-      if (!metaSnap.exists()) return local || {};
+      if (!metaSnap.exists()) {
+        return local || {};
+      }
 
-      const {
-        parts,
-        generatedAt,
-        version: serverVersion,
-      } = metaSnap.data();
+      const { parts, generatedAt, version: serverVersion } = metaSnap.data();
 
-      /* ✅ CACHE VALID & VERSION SAME */
+      /* ✅ USE CACHE (SOFT SNAPSHOT) */
       if (
+        !force &&
         local &&
-        Object.keys(local).length &&
+        Object.keys(local).length > 0 &&
         localVersion === serverVersion
       ) {
+        console.log("🟢 Using cached snapshot (version match)");
         return local;
       }
 
-      console.warn(
-        "Snapshot version changed or cache missing. Reloading snapshot…"
-      );
+      console.warn("🔄 Reloading snapshot (version change or force)");
 
-      /* 🧹 CLEAR OLD CACHE */
+      /* 🧹 CLEAR CACHE */
       await localforage.removeItem(LOCAL_KEY);
       await localforage.removeItem(LAST_SYNC_KEY);
       await localforage.removeItem(SNAPSHOT_VERSION_KEY);
@@ -63,28 +59,18 @@ export function useFamilies() {
 
       for (let i = 1; i <= parts; i++) {
         const partSnap = await getDoc(
-          doc(
-            firestore,
-            "familySnapshots",
-            `snapshot_part_${i}`
-          )
+          doc(firestore, "familySnapshots", `snapshot_part_${i}`)
         );
 
         if (partSnap.exists()) {
-          Object.assign(
-            merged,
-            partSnap.data().data
-          );
+          Object.assign(merged, partSnap.data().data);
         }
       }
 
-      /* 💾 SAVE NEW CACHE */
+      /* 💾 SAVE SNAPSHOT */
       await localforage.setItem(LOCAL_KEY, merged);
       await localforage.setItem(LAST_SYNC_KEY, generatedAt);
-      await localforage.setItem(
-        SNAPSHOT_VERSION_KEY,
-        serverVersion
-      );
+      await localforage.setItem(SNAPSHOT_VERSION_KEY, serverVersion);
 
       return merged;
     } catch (e) {
@@ -98,26 +84,34 @@ export function useFamilies() {
     try {
       setSyncing(true);
 
-      const base = force ? {} : await loadSnapshotIfNeeded();
+      const base = await loadSnapshotIfNeeded(force);
 
       if (Object.keys(base).length) {
         setFamilies(mapObjectToArray(base));
       }
 
       const lastSync =
-        force
-          ? 0
-          : (await localforage.getItem(LAST_SYNC_KEY)) || 0;
+        force ? 0 : (await localforage.getItem(LAST_SYNC_KEY)) || 0;
 
       const updates = await fetchUpdatedFamilies(lastSync);
 
       if (Object.keys(updates).length) {
         const merged = { ...base, ...updates };
 
+        const latestUpdatedAt = Math.max(
+          lastSync,
+          ...Object.values(updates).map(
+            (f) => f.meta?.updatedAt || 0
+          )
+        );
+
         await localforage.setItem(LOCAL_KEY, merged);
-        await localforage.setItem(LAST_SYNC_KEY, Date.now());
+        await localforage.setItem(LAST_SYNC_KEY, latestUpdatedAt);
 
         setFamilies(mapObjectToArray(merged));
+      } else if (!Object.keys(base).length) {
+        // safety: ensure UI renders even if empty
+        setFamilies([]);
       }
     } catch (e) {
       console.error("Family sync failed", e);
@@ -137,6 +131,6 @@ export function useFamilies() {
     loading,
     syncing,
     refresh: () => sync(false),
-    forceRefresh: () => sync(true),
+    forceRefresh: () => sync(true), // 🔥 HARD reload
   };
 }

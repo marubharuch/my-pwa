@@ -1,11 +1,9 @@
-// services/familyService.js
+// src/services/familyService.js
 import { ref, get, query, orderByChild, startAt } from "firebase/database";
 import { db } from "../firebase";
 
-/**
- * Fetch only families updated after last sync
- */
 export async function fetchUpdatedFamilies(lastSync = 0) {
+  console.log(`Fetching families updated after...`);
   const q = query(
     ref(db, "families"),
     orderByChild("meta/updatedAt"),
@@ -13,13 +11,15 @@ export async function fetchUpdatedFamilies(lastSync = 0) {
   );
 
   const snapshot = await get(q);
-  return snapshot.exists() ? snapshot.val() : {};
+
+  if (!snapshot.exists()) {
+    console.log("RTDB read: 0 KB (no updates)");
+    return {};
+  }
+
+  return snapshot.val();
 }
 
-
-/**
- * Fetch single family (edit / detail use)
- */
 export async function fetchFamilyById(familyId) {
   const snapshot = await get(ref(db, `families/${familyId}`));
   return snapshot.exists() ? snapshot.val() : null;

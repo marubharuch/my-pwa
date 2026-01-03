@@ -3,12 +3,12 @@ import { doc, writeBatch } from "firebase/firestore";
 import { db, firestore } from "../firebase";
 
 /**
- * 📦 Generate Family Snapshot
+ * 📦 Generate Family Snapshot (ADMIN ONLY)
  * ------------------------------------------------
  * - Reads ALL families from RTDB
  * - Splits data into <= 0.95 MB chunks
  * - Saves chunks to Firestore
- * - Saves snapshot_meta document WITH VERSION
+ * - Saves snapshot_meta WITH VERSION + AUDIT INFO
  *
  * Firestore structure:
  * familySnapshots/
@@ -21,14 +21,25 @@ import { db, firestore } from "../firebase";
 const MAX_DOC_SIZE_BYTES = 950 * 1024; // 0.95 MB safety limit
 
 /**
- * @param {string} version - snapshot version (required)
+ * @param {Object} params
+ * @param {string} params.version       - REQUIRED (cache invalidation key)
+ * @param {string} [params.reason]       - Optional admin reason
+ * @param {string} [params.triggeredBy]  - Admin UID / email
  */
-export async function generateFamilySnapshot(version) {
+export async function generateFamilySnapshot({
+  version,
+  reason = "manual",
+  triggeredBy = "unknown",
+}) {
   if (!version) {
     throw new Error("Snapshot version is required");
   }
 
-  console.log("generateFamilySnapshot started", version);
+  console.log("📦 generateFamilySnapshot started", {
+    version,
+    reason,
+    triggeredBy,
+  });
 
   /* ================= LOAD RTDB DATA ================= */
   const snap = await get(ref(db, "families"));
@@ -49,12 +60,14 @@ export async function generateFamilySnapshot(version) {
     const wrapped = { [familyId]: familyData };
     const size = JSON.stringify(wrapped).length;
 
-    // If single family is too large (very rare)
+    // Safety: single family too large (very rare)
     if (size > MAX_DOC_SIZE_BYTES) {
-      throw new Error(`Family ${familyId} exceeds snapshot size limit`);
+      throw new Error(
+        `Family ${familyId} exceeds snapshot size limit`
+      );
     }
 
-    // Start new part if limit exceeded
+    // Start new part if size limit exceeded
     if (currentSize + size > MAX_DOC_SIZE_BYTES) {
       parts.push(currentPart);
       currentPart = {};
@@ -73,6 +86,19 @@ export async function generateFamilySnapshot(version) {
   const batch = writeBatch(firestore);
   const generatedAt = Date.now();
 
+  /* 🔒 OPTIONAL LOCK (PREVENT DOUBLE REGEN) */
+  const metaRef = doc(firestore, "familySnapshots", "snapshot_meta");
+  batch.set(
+    metaRef,
+    {
+      locked: true,
+      lockTime: generatedAt,
+      lockBy: triggeredBy,
+    },
+    { merge: true }
+  );
+
+  /* ================= SNAPSHOT PARTS ================= */
   parts.forEach((data, index) => {
     const partRef = doc(
       firestore,
@@ -84,24 +110,35 @@ export async function generateFamilySnapshot(version) {
       data,
       part: index + 1,
       generatedAt,
-      version, // 🔑 keep version with each part (optional but useful)
+      version, // helpful for debugging
     });
   });
 
   /* ================= SNAPSHOT META ================= */
-  const metaRef = doc(firestore, "familySnapshots", "snapshot_meta");
-
   const meta = {
     version, // 🔑 CRITICAL FOR CACHE INVALIDATION
     generatedAt,
     generatedAtISO: new Date(generatedAt).toISOString(),
     totalFamilies: familyEntries.length,
     parts: parts.length,
+
+    // 🧾 ADMIN AUDIT
+    reason,
+    triggeredBy,
+
+    // 🔓 UNLOCK
+    locked: false,
   };
 
   batch.set(metaRef, meta);
 
   await batch.commit();
+
+  console.log("✅ Snapshot generated successfully", {
+    version,
+    parts: parts.length,
+    totalFamilies: familyEntries.length,
+  });
 
   return meta;
 }

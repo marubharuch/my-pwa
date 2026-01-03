@@ -81,6 +81,10 @@ export default function AdminUsersPage() {
         email: u.email || "",
         role: u.role || "guest",
         familyId: u.familyId || "",
+        name: u.name || "",
+        mobile: u.mobile || "",
+        altMobile: u.altMobile || "",
+        city: u.city || "",
         createdAt: u.createdAt || 0,
       }));
 
@@ -102,7 +106,7 @@ export default function AdminUsersPage() {
     if (role === "superadmin") {
       loadUsers();
     } else {
-      setUsers([]); // admin sees nothing by default
+      setUsers([]);
     }
   }, [role]);
 
@@ -130,6 +134,11 @@ export default function AdminUsersPage() {
           email: u.email || "",
           role: u.role || "guest",
           familyId: u.familyId,
+          name: u.name || "",
+          mobile: u.mobile || "",
+          altMobile: u.altMobile || "",
+          city: u.city || "",
+          createdAt: u.createdAt || 0,
         }));
 
       setUsers(matched);
@@ -201,7 +210,7 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <div className="p-6 max-w-6xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold">
         {role === "superadmin" ? "Users & Roles" : "Family Users"}
       </h1>
@@ -253,58 +262,67 @@ export default function AdminUsersPage() {
       )}
 
       {/* ================= TABLE ================= */}
-      {loadingUsers ? (
-        <p className="text-gray-500">Loading users…</p>
-      ) : (
-        <div className="overflow-auto border rounded">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="p-2 border">Email</th>
-                <th className="p-2 border">Family</th>
-                <th className="p-2 border">Role</th>
-                <th className="p-2 border">Change</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleUsers.map((u) => (
-                <tr key={u.uid} className="border-t">
-                  <td className="p-2">{u.email}</td>
-                  <td className="p-2">{u.familyId || "—"}</td>
-                  <td className="p-2 font-semibold">{u.role}</td>
-                  <td className="p-2">
-                    <select
-                      value={u.role}
-                      onChange={(e) =>
-                        changeRole(u.uid, e.target.value)
-                      }
-                      className="border p-1 rounded"
-                    >
-                      <option value="guest">guest</option>
-                      <option value="approved">approved</option>
-                      <option value="blocked">blocked</option>
-                      {role === "superadmin" && (
-                        <option value="admin">admin</option>
-                      )}
-                    </select>
-                  </td>
-                </tr>
-              ))}
-
-              {visibleUsers.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={4}
-                    className="p-4 text-center text-gray-500"
+      <div className="overflow-auto border rounded">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="p-2 border">Name</th>
+              <th className="p-2 border">Email</th>
+              <th className="p-2 border">Mobile</th>
+              <th className="p-2 border">Family</th>
+              <th className="p-2 border">Role</th>
+              <th className="p-2 border">Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleUsers.map((u) => (
+              <tr key={u.uid} className="border-t">
+                <td className="p-2 font-medium">
+                  {u.name || "—"}
+                </td>
+                <td className="p-2">{u.email}</td>
+                <td className="p-2">
+                  {u.mobile || "—"}
+                  {u.altMobile && (
+                    <div className="text-xs text-gray-500">
+                      Alt: {u.altMobile}
+                    </div>
+                  )}
+                </td>
+                <td className="p-2">{u.familyId || "—"}</td>
+                <td className="p-2 font-semibold">{u.role}</td>
+                <td className="p-2">
+                  <select
+                    value={u.role}
+                    onChange={(e) =>
+                      changeRole(u.uid, e.target.value)
+                    }
+                    className="border p-1 rounded"
                   >
-                    No users found
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+                    <option value="guest">guest</option>
+                    <option value="approved">approved</option>
+                    <option value="blocked">blocked</option>
+                    {role === "superadmin" && (
+                      <option value="admin">admin</option>
+                    )}
+                  </select>
+                </td>
+              </tr>
+            ))}
+
+            {visibleUsers.length === 0 && (
+              <tr>
+                <td
+                  colSpan={6}
+                  className="p-4 text-center text-gray-500"
+                >
+                  No users found
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

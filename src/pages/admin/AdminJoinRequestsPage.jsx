@@ -67,9 +67,11 @@ export default function AdminFamilyEditorRequestsPage() {
 
       // Update user record
       await update(ref(db, `users/${userId}`), {
-        role: "editor",
-        [`editorFamilies/${familyId}`]: true,
-      });
+  familyId: familyId,
+  role: "member",       // or keep existing role if needed
+  pendingJoin: null,
+});
+
 
       // Remove pending request
       await remove(ref(db, `families/${familyId}/pendingRequests/${userId}`));
