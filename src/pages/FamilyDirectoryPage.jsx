@@ -195,22 +195,36 @@ const MIN_SEARCH_LEN = 3;
 
 
   /* ================= NAME HIGHLIGHT ================= */
-  const renderName = (name) => {
+const renderName = (name) => {
   if (!name) return "";
 
-  if (!search) return name;
+  if (!debouncedSearch) return name;
 
-  const safeName = String(name);
-  const reg = new RegExp(`(${escapeRegExp(search)})`, "gi");
+  const parts = name.split(" ");
+  const first = parts[0];
+
+  if (
+    !first.toLowerCase().startsWith(debouncedSearch.toLowerCase())
+  ) {
+    return name;
+  }
+
+  const reg = new RegExp(
+    `^(${escapeRegExp(debouncedSearch)})`,
+    "i"
+  );
+
+  parts[0] = first.replace(reg, "<mark>$1</mark>");
 
   return (
     <span
       dangerouslySetInnerHTML={{
-        __html: safeName.replace(reg, "<mark>$1</mark>"),
+        __html: parts.join(" "),
       }}
     />
   );
 };
+
 
 
   /* ================= MEMBER INFO (USER MODE) ================= */
@@ -247,15 +261,18 @@ const MIN_SEARCH_LEN = 3;
   debouncedSearch.trim().length >= MIN_SEARCH_LEN;
 
 
-  const searchedFamilies = searchMode
-    ? families.filter((f) =>
-        Object.values(f.members || {}).some(
-          (m) =>
-            m.active !== false &&
-            m.name?.toLowerCase().includes(search.toLowerCase())
-        )
-      )
-    : [];
+const searchedFamilies = searchMode
+  ? families.filter((f) =>
+      Object.values(f.members || {}).some((m) => {
+        if (m.active === false || !m.name) return false;
+
+        const firstName = m.name.split(" ")[0].toLowerCase();
+        return firstName.startsWith(debouncedSearch.toLowerCase());
+      })
+    )
+  : [];
+
+
 
   /* ================= FILTER + SORT ================= */
   const noFilterApplied = !searchMode && !currentCity && !nativeCity;
@@ -294,9 +311,10 @@ const MIN_SEARCH_LEN = 3;
 
 
   /* ================= LOADING ================= */
-  if (loading) {
-    return <div className="p-4 text-gray-500">Loading directory…</div>;
-  }
+  if (loading && families.length === 0) {
+  return <div className="p-4 text-gray-500">Loading  </div>;
+}
+
 
   /* ================= MEMBER STYLE ================= */
  
@@ -366,7 +384,7 @@ const paginatedFamilies = flatFamilies.slice(
       {/* ================= SEARCH ================= */}
       <input
         type="text"
-        placeholder="Search member..."
+        placeholder="Search member...(minimum 3 characters)"
         className="w-full p-2 border rounded mb-3"
         value={search}
         onChange={(e) => setSearch(e.target.value)}

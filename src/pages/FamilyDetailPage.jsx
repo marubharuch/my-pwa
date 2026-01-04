@@ -49,6 +49,9 @@ export default function FamilyDetailPage({
 
   const [memberModalOpen, setMemberModalOpen] = useState(false);
   const [editMember, setEditMember] = useState(null);
+  const [orderDraft, setOrderDraft] = useState({});
+const [orderSaved, setOrderSaved] = useState({});
+
 
   /* ---------------- LOAD FAMILY ---------------- */
   useEffect(() => {
@@ -69,6 +72,17 @@ export default function FamilyDetailPage({
     loadMembers();
   }, [familyId]);
 
+  //------------  //
+  
+useEffect(() => {
+  const draft = {};
+  Object.entries(members || {}).forEach(([id, m]) => {
+    draft[id] = m.displayOrder ?? "";
+  });
+  setOrderDraft(draft);
+}, [members]);
+
+
   /* ---------------- PERMISSION ---------------- */
   const isEditor =
     !!userRecord &&
@@ -78,6 +92,31 @@ export default function FamilyDetailPage({
       family.meta?.createdBy === uid ||
       family.info?.editorEmails?.[uid] === true
     );
+
+    /* ================= MEMBER ORDER UPDATE ================= */
+const updateMemberOrder = async (memberId, order) => {
+  if (!order || order < 1) return;
+
+  try {
+    await update(
+      ref(db, `families/${familyId}/members/${memberId}`),
+      { displayOrder: Number(order) }
+    );
+
+    // ✅ show "Saved"
+    setOrderSaved((p) => ({ ...p, [memberId]: true }));
+
+    // ⏳ auto-hide after 1.5 sec
+    setTimeout(() => {
+      setOrderSaved((p) => ({ ...p, [memberId]: false }));
+    }, 1500);
+
+  } catch (err) {
+    console.error("Failed to update displayOrder", err);
+  }
+};
+
+
 
   /* ---------------- HIDE / UNHIDE MEMBER ---------------- */
   const toggleMemberVisibility = async (memberId, isActive) => {
@@ -188,9 +227,13 @@ alert(id ? "Member updated successfully" : "Member added successfully");
   if (loading || authLoading) return <div className="p-4">Loading…</div>;
   if (!family) return <div className="p-4">Family not found</div>;
 
-  const visibleMembers = Object.entries(members || {}).filter(
-    ([, m]) => isEditor || m.active !== false
+  const visibleMembers = Object.entries(members || {})
+  .map(([id, m]) => ({ id, ...m }))
+  .filter((m) => isEditor || m.active !== false)
+  .sort(
+    (a, b) => (a.displayOrder ?? 999) - (b.displayOrder ?? 999)
   );
+
 
   /* ---------------- RENDER ---------------- */
   return (
@@ -268,47 +311,82 @@ alert(id ? "Member updated successfully" : "Member added successfully");
 
       {/* MEMBERS */}
       <h3 className="font-bold mb-2">Members</h3>
+{/* ================= MEMBER DISPLAY ORDER ================= */}
 
-      {visibleMembers.map(([id, m]) => (
+
+      {visibleMembers.map((m) => (
         <div
-          key={id}
-          className={`p-3 rounded shadow mb-2 flex justify-between items-center
-            ${
-              m.active === false
-                ? "bg-gray-100 opacity-70 border border-dashed"
-                : "bg-white"
-            }`}
-        >
-          <div>
-            <b>{m.name}</b>
-            {m.active === false && (
-              <span className="text-xs text-gray-400 ml-2">Hidden</span>
-            )}
-          </div>
+  key={m.id}
+  className={`p-3 rounded shadow mb-2 flex items-center gap-3
+    ${
+      m.active === false
+        ? "bg-gray-100 opacity-70 border border-dashed"
+        : "bg-white"
+    }`}
+>
+  {/* ORDER INPUT (EDITOR ONLY) */}
+  {isEditor && (
+    <input
+  type="number"
+  min="1"
+  inputMode="numeric"
+  placeholder="—"
+  value={orderDraft[m.id] ?? ""}
+  onChange={(e) =>
+    setOrderDraft((p) => ({
+      ...p,
+      [m.id]: e.target.value,
+    }))
+  }
+  onBlur={() =>
+    updateMemberOrder(m.id, orderDraft[m.id])
+  }
+  className="
+    w-12 h-8
+    border border-gray-300
+    rounded-md
+    text-center text-sm
+  "
+/>
 
-          {isEditor && (
-            <div className="flex gap-3 items-center">
-              <button
-                onClick={() => {
-                  setEditMember({ id, ...m });
-                  setMemberModalOpen(true);
-                }}
-                className="text-sm text-blue-600"
-              >
-                Edit
-              </button>
+  )}
 
-              <button
-                onClick={() => toggleMemberVisibility(id, m.active !== false)}
-                className={`text-sm ${
-                  m.active === false ? "text-green-600" : "text-red-600"
-                }`}
-              >
-                {m.active === false ? "Unhide" : "Hide"}
-              </button>
-            </div>
-          )}
-        </div>
+  {/* MEMBER NAME */}
+  <div className="flex-1">
+    <b>{m.name}</b>
+    {orderSaved[m.id] && (
+    <span className="text-xs text-green-600 ml-2">
+      Saved
+    </span>
+  )}
+    {m.active === false && (
+      <span className="text-xs text-gray-400 ml-2">Hidden</span>
+    )}
+  </div>
+
+  {/* ACTIONS */}
+  {isEditor && (
+    <div className="flex gap-3 items-center text-sm">
+      <button
+        onClick={() => {
+          setEditMember(m);
+          setMemberModalOpen(true);
+        }}
+        className="text-blue-600"
+      >
+        Edit
+      </button>
+
+      <button
+        onClick={() => toggleMemberVisibility(m.id, m.active !== false)}
+        className={m.active === false ? "text-green-600" : "text-red-600"}
+      >
+        {m.active === false ? "Unhide" : "Hide"}
+      </button>
+    </div>
+  )}
+</div>
+
       ))}
 
       {isEditor && (

@@ -10,15 +10,45 @@ const LAST_SYNC_KEY = "familiesLastSync";
 const SNAPSHOT_VERSION_KEY = "familiesSnapshotVersion";
 
 export function useFamilies() {
+  /* ================= STATE ================= */
   const [families, setFamilies] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
+  const [loading, setLoading] = useState(true);   // only for first load
+  const [syncing, setSyncing] = useState(false);  // background sync
 
   const mapObjectToArray = (obj) =>
     Object.entries(obj || {}).map(([id, data]) => ({
       familyId: id,
       ...data,
     }));
+
+  /* ================= EARLY CACHE HYDRATION ================= */
+  useEffect(() => {
+    let cancelled = false;
+
+    async function hydrateCache() {
+      try {
+        const cached = await localforage.getItem(LOCAL_KEY);
+
+        if (
+          !cancelled &&
+          cached &&
+          typeof cached === "object" &&
+          Object.keys(cached).length > 0
+        ) {
+          setFamilies(mapObjectToArray(cached));
+          setLoading(false); // 🔑 IMPORTANT
+        }
+      } catch (e) {
+        console.error("Cache hydrate failed", e);
+      }
+    }
+
+    hydrateCache();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /* ================= LOAD FIRESTORE SNAPSHOT ================= */
   async function loadSnapshotIfNeeded(force = false) {
@@ -34,9 +64,10 @@ export function useFamilies() {
         return local || {};
       }
 
-      const { parts, generatedAt, version: serverVersion } = metaSnap.data();
+      const { parts, generatedAt, version: serverVersion } =
+        metaSnap.data();
 
-      /* ✅ USE CACHE (SOFT SNAPSHOT) */
+      /* ✅ USE CACHE */
       if (
         !force &&
         local &&
@@ -47,7 +78,7 @@ export function useFamilies() {
         return local;
       }
 
-      console.warn("🔄 Reloading snapshot (version change or force)");
+      console.warn("🔄 Reloading snapshot");
 
       /* 🧹 CLEAR CACHE */
       await localforage.removeItem(LOCAL_KEY);
@@ -84,10 +115,14 @@ export function useFamilies() {
     try {
       setSyncing(true);
 
+      // 🚫 do NOT re-enable loading if data already exists
+      setLoading((l) => (families.length === 0 ? true : l));
+
       const base = await loadSnapshotIfNeeded(force);
 
       if (Object.keys(base).length) {
         setFamilies(mapObjectToArray(base));
+        setLoading(false);
       }
 
       const lastSync =
@@ -109,9 +144,6 @@ export function useFamilies() {
         await localforage.setItem(LAST_SYNC_KEY, latestUpdatedAt);
 
         setFamilies(mapObjectToArray(merged));
-      } else if (!Object.keys(base).length) {
-        // safety: ensure UI renders even if empty
-        setFamilies([]);
       }
     } catch (e) {
       console.error("Family sync failed", e);
@@ -126,11 +158,12 @@ export function useFamilies() {
     sync(false);
   }, []);
 
+  /* ================= API ================= */
   return {
     families,
     loading,
     syncing,
     refresh: () => sync(false),
-    forceRefresh: () => sync(true), // 🔥 HARD reload
+    forceRefresh: () => sync(true),
   };
 }

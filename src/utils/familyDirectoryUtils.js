@@ -17,18 +17,27 @@ export const escapeRegExp = (str) =>
   str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export const splitMembers = (membersObj, PRIMARY_COUNT = 1) => {
-  const list = Object.entries(membersObj || {}).map(([key, m]) => ({
-    id: m.id || key,
-    ...m,
-  }));
-
-  list.sort((a, b) => Number(a.id) - Number(b.id));
+  const list = Object.entries(membersObj || {})
+    .map(([key, m]) => ({
+      id: m.id || key,
+      ...m,
+    }))
+    .filter(
+      (m) =>
+        m.active !== false &&              // 🚫 hidden members
+        typeof m.name === "string" &&      // 🚫 missing name
+        m.name.trim().length > 0           // 🚫 empty name
+    )
+    .sort(
+      (a, b) => (a.displayOrder ?? 999) - (b.displayOrder ?? 999)
+    );
 
   return {
     primary: list.slice(0, PRIMARY_COUNT),
     extra: list.slice(PRIMARY_COUNT),
   };
 };
+
 
 export const getMemberClass = (m) => {
   let cls = "flex-1 select-none ";
