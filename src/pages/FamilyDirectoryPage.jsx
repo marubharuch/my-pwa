@@ -284,20 +284,39 @@ const searchedFamilies = searchMode
         return ok1 && ok2;
       })
     : [];
+const getPrimaryName = (family) => {
+  const members = Object.values(family.members || {}).filter(
+    (m) =>
+      m &&
+      m.active !== false &&              // ✅ only active
+      m.hide !== true &&                 // ✅ ignore hidden (if exists)
+      typeof m.name === "string" &&      // ✅ must have name
+      m.name.trim().length > 0           // ✅ non-empty
+  );
 
-  const getPrimaryName = (family) => {
-    const members = Object.values(family.members || {}).filter(
-      (m) => m.active !== false
-    );
-    return members.length ? members[0].name.toLowerCase() : "";
-  };
+  if (members.length === 0) return "";
 
-  const sortedFamilies = [...filteredFamilies].sort((a, b) => {
-    if (sortMode === "alpha") {
-      return getPrimaryName(a).localeCompare(getPrimaryName(b));
-    }
-    return Number(a.familyId) - Number(b.familyId);
-  });
+  return members[0].name.trim().toLowerCase();
+};
+
+
+const sortedFamilies = [...filteredFamilies].sort((a, b) => {
+  if (sortMode === "alpha") {
+    return getPrimaryName(a).localeCompare(getPrimaryName(b));
+  }
+
+  const aNum = parseInt(a.familyId, 10);
+  const bNum = parseInt(b.familyId, 10);
+
+  // ✅ both numeric → numeric sort
+  if (!isNaN(aNum) && !isNaN(bNum)) {
+    return aNum - bNum;
+  }
+
+  // ✅ fallback → string compare (never crashes)
+  return String(a.familyId).localeCompare(String(b.familyId));
+});
+
 
   const grouped = sortedFamilies.reduce((acc, f) => {
     const key = noFilterApplied

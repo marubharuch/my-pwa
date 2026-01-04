@@ -97,24 +97,25 @@ useEffect(() => {
 const updateMemberOrder = async (memberId, order) => {
   if (!order || order < 1) return;
 
-  try {
-    await update(
-      ref(db, `families/${familyId}/members/${memberId}`),
-      { displayOrder: Number(order) }
-    );
+  const now = Date.now();
 
-    // ✅ show "Saved"
-    setOrderSaved((p) => ({ ...p, [memberId]: true }));
+  await update(
+    ref(db, `families/${familyId}/members/${memberId}`),
+    {
+      displayOrder: Number(order),
+      updatedAt: now,
+    }
+  );
 
-    // ⏳ auto-hide after 1.5 sec
-    setTimeout(() => {
-      setOrderSaved((p) => ({ ...p, [memberId]: false }));
-    }, 1500);
-
-  } catch (err) {
-    console.error("Failed to update displayOrder", err);
-  }
+  await update(
+    ref(db, `families/${familyId}/meta`),
+    {
+      updatedAt: now,
+      membersUpdatedAt: now,
+    }
+  );
 };
+
 
 
 

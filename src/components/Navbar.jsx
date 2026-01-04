@@ -15,6 +15,10 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import usePWAInstall from "../hooks/usePWAInstall";
 import { APP_VERSION } from "../version";
+import { FaAddressBook } from "react-icons/fa";
+import { MdFamilyRestroom } from "react-icons/md";
+
+
 
 
 
@@ -70,6 +74,15 @@ const { canInstall, install } = usePWAInstall();
 
         {/* ================= MOBILE ================= */}
         <div className="flex items-center gap-5 md:hidden text-white text-[11px]">
+          {/* TELEPHONE DIRECTORY */}
+<Link
+  to="/tel"
+  className="flex flex-col items-center"
+>
+  <FaAddressBook className="text-xl" />
+  <span>Tel Dir</span>
+</Link>
+
 {canInstall && (
   <button
     onClick={install}
@@ -120,6 +133,13 @@ const { canInstall, install } = usePWAInstall();
 
         {/* ================= DESKTOP ================= */}
         <div className="hidden md:flex gap-6 text-white text-sm items-center">
+          <Link
+  to="/tel"
+  className="flex flex-col items-center"
+>
+  <FaAddressBook className="text-xl" />
+  <span>Tel Dir</span>
+</Link>
          
 {canInstall && (
   <button

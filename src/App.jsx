@@ -44,6 +44,7 @@ import JoinFamilyPage from "./pages/JoinFamilyPage";
 import CreateFamilyPage from "./pages/CreateFamilyPage";
 import FamilyListPage from "./pages/FamilyListPage";
 import FamilyDirectoryPage from "./pages/FamilyDirectoryPage";
+import TelDir from "./pages/TelDir.jsx";
 import FamilyDetailPage from "./pages/FamilyDetailPage";
 
 /* ===================== REQUESTS ===================== */
@@ -200,6 +201,15 @@ export default function App() {
           element={
             <MainLayout>
               <FamilyDirectoryPage />
+            </MainLayout>
+          }
+        />
+
+        <Route
+          path="/tel"
+          element={
+            <MainLayout>
+              <TelDir />
             </MainLayout>
           }
         />

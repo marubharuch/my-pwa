@@ -1,51 +1,45 @@
 // src/pages/admin/AdminUsersPage.jsx
 
 /**
- * 👥 ADMIN USERS PAGE
+ * 👥 ADMIN USERS PAGE – MOBILE FRIENDLY & SAFE
  *
- * ROLE BEHAVIOUR
+ * FEATURES
  * ------------------------------------------------
- * 👑 superadmin:
- *  - View users (last 7 days default)
- *  - Search by email
- *  - Change any role
- *  - Cached via localForage
- *
- * 🛡️ admin:
- *  - NO default users shown
- *  - Search by FAMILY ID only
- *  - See users of that family only
- *  - Cannot assign admin/superadmin
+ * - Unified search
+ * - Call & WhatsApp icons
+ * - WhatsApp session stored locally
+ * - Visual feedback after WhatsApp click
+ * - Admin: fix familyId
+ * - Superadmin: role change + delete (with confirmation)
  */
 
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ref, get, update } from "firebase/database";
+import { ref, get, update, remove } from "firebase/database";
 import localforage from "localforage";
+import {
+  FaPhone,
+  FaWhatsapp,
+  FaTrash,
+} from "react-icons/fa";
 
 import { db } from "../../firebase";
 import { useAuth } from "../../context/AuthContext";
 
 /* ================= CONFIG ================= */
 const CACHE_KEY = "superadmin_users_cache";
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const WA_SESSION_KEY = "wa_last_contact";
 
 export default function AdminUsersPage() {
   const { userRecord, loading } = useAuth();
   const navigate = useNavigate();
-
   const role = userRecord?.role;
 
   /* ================= STATE ================= */
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
-
-  // Superadmin
-  const [searchEmail, setSearchEmail] = useState("");
-  const [showLast7Days, setShowLast7Days] = useState(true);
-
-  // Admin
-  const [familyId, setFamilyId] = useState("");
+  const [searchText, setSearchText] = useState("");
+  const [waInfo, setWaInfo] = useState(null);
 
   /* ================= ACCESS CONTROL ================= */
   useEffect(() => {
@@ -54,66 +48,16 @@ export default function AdminUsersPage() {
     }
   }, [loading, role, navigate]);
 
-  /* ================= LOAD USERS (SUPERADMIN) ================= */
-  const loadUsers = async (force = false) => {
-    if (role !== "superadmin") return;
-
-    setLoadingUsers(true);
-
-    try {
-      if (!force) {
-        const cached = await localforage.getItem(CACHE_KEY);
-        if (cached && Date.now() - cached.time < CACHE_TTL) {
-          setUsers(cached.data);
-          setLoadingUsers(false);
-          return;
-        }
-      }
-
-      const snap = await get(ref(db, "users"));
-      if (!snap.exists()) {
-        setUsers([]);
-        return;
-      }
-
-      const list = Object.entries(snap.val()).map(([uid, u]) => ({
-        uid,
-        email: u.email || "",
-        role: u.role || "guest",
-        familyId: u.familyId || "",
-        name: u.name || "",
-        mobile: u.mobile || "",
-        altMobile: u.altMobile || "",
-        city: u.city || "",
-        createdAt: u.createdAt || 0,
-      }));
-
-      await localforage.setItem(CACHE_KEY, {
-        time: Date.now(),
-        data: list,
-      });
-
-      setUsers(list);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoadingUsers(false);
-    }
-  };
-
-  /* ================= INITIAL LOAD ================= */
+  /* ================= LOAD WA SESSION ================= */
   useEffect(() => {
-    if (role === "superadmin") {
-      loadUsers();
-    } else {
-      setUsers([]);
-    }
-  }, [role]);
+    const saved = localStorage.getItem(WA_SESSION_KEY);
+    if (saved) setWaInfo(JSON.parse(saved));
+  }, []);
 
-  /* ================= ADMIN SEARCH BY FAMILY ================= */
-  const searchByFamily = async () => {
-    if (!familyId.trim()) {
-      alert("Enter Family ID");
+  /* ================= SEARCH USERS ================= */
+  const searchUsers = async () => {
+    if (!searchText.trim()) {
+      alert("Enter search text");
       return;
     }
 
@@ -122,201 +66,232 @@ export default function AdminUsersPage() {
 
     try {
       const snap = await get(ref(db, "users"));
-      if (!snap.exists()) {
-        alert("No users found");
-        return;
-      }
+      if (!snap.exists()) return;
 
-      const matched = Object.entries(snap.val())
-        .filter(([, u]) => String(u.familyId) === familyId.trim())
+      const q = searchText.toLowerCase();
+
+      const list = Object.entries(snap.val())
+        .filter(([, u]) =>
+          u?.email?.toLowerCase().includes(q) ||
+          u?.name?.toLowerCase().includes(q) ||
+          u?.mobile?.includes(q) ||
+          u?.altMobile?.includes(q) ||
+          String(u?.familyId || "").includes(q)
+        )
         .map(([uid, u]) => ({
           uid,
           email: u.email || "",
-          role: u.role || "guest",
-          familyId: u.familyId,
           name: u.name || "",
+          role: u.role || "guest",
+          familyId: u.familyId || "",
           mobile: u.mobile || "",
           altMobile: u.altMobile || "",
-          city: u.city || "",
-          createdAt: u.createdAt || 0,
         }));
 
-      setUsers(matched);
-    } catch (e) {
-      console.error(e);
-      alert("Search failed");
+      setUsers(list);
     } finally {
       setLoadingUsers(false);
     }
   };
 
-  /* ================= ROLE CHANGE ================= */
-  const changeRole = async (uid, newRole) => {
-    if (
-      role === "admin" &&
-      ["admin", "superadmin"].includes(newRole)
-    ) {
-      alert("Admin cannot assign admin roles");
-      return;
-    }
+  /* ================= USERS WITH MISSING FAMILY ================= */
+  const showMissingFamilyUsers = async () => {
+    setLoadingUsers(true);
+    setUsers([]);
 
-    if (!window.confirm(`Change role to "${newRole}"?`)) return;
+    const snap = await get(ref(db, "users"));
+    if (!snap.exists()) return;
 
-    try {
-      await update(ref(db, `users/${uid}`), { role: newRole });
+    const list = Object.entries(snap.val())
+      .filter(([, u]) => !u.familyId)
+      .map(([uid, u]) => ({
+        uid,
+        email: u.email || "",
+        name: u.name || "",
+        role: u.role || "guest",
+        familyId: "",
+        mobile: u.mobile || "",
+        altMobile: u.altMobile || "",
+      }));
 
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.uid === uid ? { ...u, role: newRole } : u
-        )
-      );
+    setUsers(list);
+    setLoadingUsers(false);
+  };
 
-      if (role === "superadmin") {
-        const cached = await localforage.getItem(CACHE_KEY);
-        if (cached) {
-          cached.data = cached.data.map((u) =>
-            u.uid === uid ? { ...u, role: newRole } : u
-          );
-          await localforage.setItem(CACHE_KEY, cached);
-        }
-      }
-    } catch (e) {
-      console.error(e);
-      alert("Failed to update role");
+  /* ================= UPDATE FAMILY ID ================= */
+  const updateFamilyId = async (uid, familyId) => {
+    if (!familyId.trim()) return;
+
+    if (!window.confirm("Confirm update Family ID?")) return;
+
+    await update(ref(db, `users/${uid}`), { familyId });
+
+    setUsers((p) =>
+      p.map((u) =>
+        u.uid === uid ? { ...u, familyId } : u
+      )
+    );
+  };
+
+  /* ================= DELETE USER (SUPERADMIN ONLY) ================= */
+  const deleteUser = async (u) => {
+    const msg =
+      `⚠️ DELETE USER CONFIRMATION\n\n` +
+      `Name: ${u.name || "N/A"}\n` +
+      `Email: ${u.email || "N/A"}\n` +
+      `Mobile: ${u.mobile || "N/A"}\n\n` +
+      `This will PERMANENTLY remove the user record.\n` +
+      `This action CANNOT be undone.\n\n` +
+      `Do you want to continue?`;
+
+    if (!window.confirm(msg)) return;
+
+    await remove(ref(db, `users/${u.uid}`));
+
+    setUsers((p) => p.filter((x) => x.uid !== u.uid));
+
+    if (role === "superadmin") {
+      await localforage.removeItem(CACHE_KEY);
     }
   };
 
-  /* ================= FILTER (SUPERADMIN) ================= */
-  const now = Date.now();
-  const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+  /* ================= WHATSAPP ================= */
+  const openWhatsApp = (u) => {
+    if (!u.mobile) return;
 
-  const visibleUsers =
-    role === "superadmin"
-      ? users.filter((u) => {
-          if (showLast7Days && u.createdAt < sevenDaysAgo)
-            return false;
-          if (
-            searchEmail &&
-            !u.email.toLowerCase().includes(searchEmail.toLowerCase())
-          )
-            return false;
-          return true;
-        })
-      : users;
+    const session = {
+      uid: u.uid,
+      name: u.name,
+      mobile: u.mobile,
+      time: Date.now(),
+    };
+
+    localStorage.setItem(
+      WA_SESSION_KEY,
+      JSON.stringify(session)
+    );
+    setWaInfo(session);
+
+    window.open(
+      `https://wa.me/${u.mobile.replace(/\D/g, "")}`,
+      "_blank"
+    );
+  };
 
   /* ================= UI ================= */
-  if (loading) {
-    return <div className="p-6 text-center">Loading…</div>;
-  }
+  if (loading) return <div className="p-6">Loading…</div>;
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold">
-        {role === "superadmin" ? "Users & Roles" : "Family Users"}
-      </h1>
+    <div className="p-4 max-w-6xl mx-auto space-y-4">
+      <h1 className="text-xl font-bold">User Management</h1>
 
-      {/* ================= CONTROLS ================= */}
-      {role === "superadmin" ? (
-        <div className="flex flex-wrap gap-3 items-center">
-          <input
-            placeholder="Search by email…"
-            value={searchEmail}
-            onChange={(e) => setSearchEmail(e.target.value)}
-            className="border p-2 rounded flex-1 min-w-[200px]"
-          />
-
-          <button
-            onClick={() => loadUsers(true)}
-            disabled={loadingUsers}
-            className="border px-4 py-2 rounded text-sm"
-          >
-            🔄 Refresh
-          </button>
-
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={showLast7Days}
-              onChange={(e) =>
-                setShowLast7Days(e.target.checked)
-              }
-            />
-            Last 7 days
-          </label>
-        </div>
-      ) : (
-        <div className="flex gap-2">
-          <input
-            placeholder="Enter Family ID"
-            value={familyId}
-            onChange={(e) => setFamilyId(e.target.value)}
-            className="border p-2 rounded flex-1"
-          />
-          <button
-            onClick={searchByFamily}
-            className="bg-blue-600 text-white px-4 rounded"
-          >
-            Search
-          </button>
+      {/* WhatsApp feedback */}
+      {waInfo && (
+        <div className="text-sm bg-green-100 text-green-800 p-2 rounded">
+          WhatsApp opened for <b>{waInfo.name || waInfo.mobile}</b>
         </div>
       )}
 
-      {/* ================= TABLE ================= */}
-      <div className="overflow-auto border rounded">
+      {/* Controls */}
+      <div className="flex gap-2 flex-wrap">
+        <input
+          className="border p-2 rounded flex-1 min-w-[200px]"
+          placeholder="Search name / email / phone / family"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+        />
+
+        <button
+          onClick={searchUsers}
+          className="bg-blue-600 text-white px-4 rounded"
+        >
+          Search
+        </button>
+
+        <button
+          onClick={showMissingFamilyUsers}
+          className="border px-3 rounded"
+        >
+          Missing Family
+        </button>
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto border rounded">
         <table className="w-full text-sm">
           <thead className="bg-gray-100">
             <tr>
-              <th className="p-2 border">Name</th>
-              <th className="p-2 border">Email</th>
-              <th className="p-2 border">Mobile</th>
-              <th className="p-2 border">Family</th>
-              <th className="p-2 border">Role</th>
-              <th className="p-2 border">Change</th>
+              <th className="p-2">User</th>
+              <th className="p-2">Contact</th>
+              <th className="p-2">Family</th>
+              <th className="p-2">Actions</th>
             </tr>
           </thead>
+
           <tbody>
-            {visibleUsers.map((u) => (
+            {users.map((u) => (
               <tr key={u.uid} className="border-t">
-                <td className="p-2 font-medium">
-                  {u.name || "—"}
-                </td>
-                <td className="p-2">{u.email}</td>
                 <td className="p-2">
-                  {u.mobile || "—"}
-                  {u.altMobile && (
-                    <div className="text-xs text-gray-500">
-                      Alt: {u.altMobile}
-                    </div>
+                  <div className="font-medium">{u.name || "—"}</div>
+                  <div className="text-xs text-gray-500">
+                    {u.email}
+                  </div>
+                </td>
+
+                <td className="p-2 flex gap-3 items-center">
+                  <a
+                    href={u.mobile ? `tel:${u.mobile}` : undefined}
+                    className={`text-blue-600 ${
+                      !u.mobile && "opacity-30"
+                    }`}
+                  >
+                    <FaPhone size={18} />
+                  </a>
+
+                  <button
+                    onClick={() => openWhatsApp(u)}
+                    disabled={!u.mobile}
+                    className={`text-green-600 ${
+                      !u.mobile && "opacity-30"
+                    }`}
+                  >
+                    <FaWhatsapp size={20} />
+                  </button>
+                </td>
+
+                <td className="p-2">
+                  {u.familyId || (
+                    <input
+                      className="border p-1 w-24"
+                      placeholder="Family ID"
+                      onBlur={(e) =>
+                        updateFamilyId(u.uid, e.target.value)
+                      }
+                    />
                   )}
                 </td>
-                <td className="p-2">{u.familyId || "—"}</td>
-                <td className="p-2 font-semibold">{u.role}</td>
+
                 <td className="p-2">
-                  <select
-                    value={u.role}
-                    onChange={(e) =>
-                      changeRole(u.uid, e.target.value)
-                    }
-                    className="border p-1 rounded"
-                  >
-                    <option value="guest">guest</option>
-                    <option value="approved">approved</option>
-                    <option value="blocked">blocked</option>
-                    {role === "superadmin" && (
-                      <option value="admin">admin</option>
-                    )}
-                  </select>
+                  {role === "superadmin" && (
+                    <button
+                      onClick={() => deleteUser(u)}
+                      className="text-red-600"
+                      title="Delete user"
+                    >
+                      <FaTrash />
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
 
-            {visibleUsers.length === 0 && (
+            {users.length === 0 && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={4}
                   className="p-4 text-center text-gray-500"
                 >
-                  No users found
+                  No users loaded
                 </td>
               </tr>
             )}

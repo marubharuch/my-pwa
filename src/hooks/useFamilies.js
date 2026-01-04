@@ -61,7 +61,9 @@ export function useFamilies() {
       );
 
       if (!metaSnap.exists()) {
-        return local || {};
+        console.warn("⚠️ Snapshot failed, falling back to cache");
+return local && Object.keys(local).length ? local : {};
+
       }
 
       const { parts, generatedAt, version: serverVersion } =

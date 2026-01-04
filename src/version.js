@@ -1,2 +1,2 @@
 // src/version.js
-export const APP_VERSION = "beta";
+export const APP_VERSION = "BETA";
