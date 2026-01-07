@@ -119,19 +119,28 @@ export default function AdminUsersPage() {
   };
 
   /* ================= UPDATE FAMILY ID ================= */
-  const updateFamilyId = async (uid, familyId) => {
-    if (!familyId.trim()) return;
+ const updateFamilyId = async (uid, familyId) => {
+  if (!familyId.trim()) return;
 
-    if (!window.confirm("Confirm update Family ID?")) return;
+  if (!window.confirm("Confirm update Family ID and editor access?")) return;
 
-    await update(ref(db, `users/${uid}`), { familyId });
+  // 1️⃣ Update user record
+  await update(ref(db, `users/${uid}`), { familyId });
 
-    setUsers((p) =>
-      p.map((u) =>
-        u.uid === uid ? { ...u, familyId } : u
-      )
-    );
-  };
+  // 2️⃣ Add editorEmails permission
+  await update(
+    ref(db, `families/${familyId}/info/editorEmails`),
+    { [uid]: true }
+  );
+
+  // 3️⃣ Update UI state
+  setUsers((p) =>
+    p.map((u) =>
+      u.uid === uid ? { ...u, familyId } : u
+    )
+  );
+};
+
 
   /* ================= DELETE USER (SUPERADMIN ONLY) ================= */
   const deleteUser = async (u) => {

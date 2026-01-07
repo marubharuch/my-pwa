@@ -59,6 +59,8 @@ import AdminCreateFamilyPage from "./pages/admin/AdminCreateFamilyPage";
 import AdminUsersPage from "./pages/admin/AdminUsersPage";
 import AdminJoinRequestsPage from "./pages/admin/AdminJoinRequestsPage";
 import SuperAdminFamilyDeletePage from "./pages/admin/SuperAdminFamilyDeletePage";
+import LatestInfoEditor from "./pages/admin/LatestInfoEditor";
+import LatestInfoViewer from "./components/LatestInfoViewer"; 
 
 /* ===================== DEV / DEBUG ===================== */
 import DebugPage from "./pages/DebugPage";
@@ -66,6 +68,7 @@ import DebugPage from "./pages/DebugPage";
 /* ===================== ROUTE GUARD ===================== */
 import ProtectedRoute from "./components/ProtectedRoute";
 import MissingEditorsPage from "./pages/admin/MissingEditorsPage";
+import FeedbackBoard from "./components/FeedbackBoard.jsx";
 export default function App() {
   console.log("App component rendered");
 
@@ -105,6 +108,24 @@ export default function App() {
             </MainLayout>
           }
         />
+/--------------latestinfo editor route added here-----------------/
+ <Route
+          path="/latest-info-editor"
+          element={
+            <MainLayout>
+              <LatestInfoEditor />
+            </MainLayout>
+          }
+        />
+        <Route
+          path="/"
+          element={
+            <MainLayout>
+              <LatestInfoViewer />
+            </MainLayout>
+          }
+        />
+
 
         {/* =====================================================
             👑 SUPER ADMIN ROUTES
@@ -197,7 +218,7 @@ export default function App() {
 
         {/* ROOT = FAMILY DIRECTORY (PUBLIC READ) */}
         <Route
-          path="/"
+          path="/femdir"
           element={
             <MainLayout>
               <FamilyDirectoryPage />
@@ -251,6 +272,18 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+
+        <Route path="/feedback"
+         element={
+
+          
+              <MainLayout>
+                <FeedbackBoard />
+              </MainLayout>
+            
+          }
+        />
+             
 
         {/* =====================================================
             ❌ FALLBACK (404)

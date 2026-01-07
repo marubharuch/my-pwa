@@ -117,6 +117,13 @@ export default function SuperAdminDashboard() {
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 
       <button
+        onClick={() => navigate("/latest-info-editor")}
+        className="rounded-xl bg-green-600 text-white py-4 font-semibold shadow active:scale-95 transition"
+      >
+        ➕ Information editing
+      </button>
+
+      <button
         onClick={() => navigate("/superadmin/create-family")}
         className="rounded-xl bg-green-600 text-white py-4 font-semibold shadow active:scale-95 transition"
       >
